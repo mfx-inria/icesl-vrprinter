@@ -14,7 +14,7 @@ t_parser_ptr g_Parser;
 
 v4f         g_Pos(0.0f);
 v4f         g_Offset(0.0f);
-float       g_Speed = 0.0f;
+float       g_Speed = 20.0f;
 int         g_Line = 0;
 const char *g_GCode = NULL;
 
@@ -27,7 +27,7 @@ void gcode_start(const char *gcode)
   g_Parser = t_parser_ptr(new t_parser(*g_Stream,false));
   g_Pos = 0.0f;
   g_Offset = 0.0f;
-  g_Speed = 0.0f;
+  g_Speed = 20.0f;
   g_Line = 0;
 }
 
@@ -40,7 +40,7 @@ void gcode_reset()
   g_Parser = t_parser_ptr(new t_parser(*g_Stream, false));
   g_Pos = 0.0f;
   g_Offset = 0.0f;
-  g_Speed = 0.0f;
+  g_Speed = 20.0f;
   g_Line = 0;
 }
 

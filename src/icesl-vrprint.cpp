@@ -2,7 +2,7 @@
 
 #ifdef EMSCRIPTEN
 #include <emscripten.h>
-#include "html5.h"
+#include <emscripten/html5.h>
 #endif
 
 #ifndef EMSCRIPTEN
@@ -42,6 +42,8 @@ int           g_RTHeight = 1024;
 
 v2f           g_BedSize(200.0f, 150.0f);
 float         g_FilamentDiameter = 1.75f;
+
+std::string   g_GCode_string;
 
 typedef GPUMESH_MVF1(mvf_vertex_3f)                mvf_mesh;
 typedef GPUMesh_VertexBuffer<mvf_mesh>             SimpleMesh;
@@ -256,6 +258,15 @@ void mainRender()
   t_time elapsed = tm_now - tm_lastFrame;
   tm_lastFrame   = tm_now;
 
+#ifdef EMSCRIPTEN
+  if (LibSL::System::File::exists("/print.gcode")) {
+    g_GCode_string = loadFileIntoString("/print.gcode");
+    gcode_start(g_GCode_string.c_str());
+    motion_start(g_FilamentDiameter);
+    std::remove("/print.gcode");
+  }
+#endif
+
   if (!g_FatalError) {
 
     AAB<3> bx;
@@ -452,7 +463,7 @@ void mainMouseButton(uint x, uint y, uint btn, uint flags)
 void beginDownload()
 {
   g_Downloading = true;
-  std::remove("/loaded.gcode");
+  std::remove("/print.gcode");
 }
 
 void setDownloadProgress(float progress)
@@ -547,14 +558,14 @@ int main(int argc, const char **argv)
 #ifdef EMSCRIPTEN
   emscripten_run_script("parseCommandLine();\n");
   if (!g_Downloading) {
-    std::string gcode = loadFileIntoString("./icesl.gcode");
-    gcode_start(gcode.c_str());
+    g_GCode_string = loadFileIntoString("./icesl.gcode");
+    gcode_start(g_GCode_string.c_str());
     std::string command = "setupEditor();";
     emscripten_run_script(command.c_str());
   }
 #else
-  std::string gcode = loadFileIntoString("G:\\ICESL\\ICESL_next\\icesl-next\\icesl-vrprint\\www\\icesl.gcode");
-  gcode_start(gcode.c_str());
+  std::string g_GCode_string = loadFileIntoString("G:\\ICESL\\ICESL_next\\icesl-next\\icesl-vrprint\\www\\icesl.gcode");
+  gcode_start(g_GCode_string.c_str());
 #endif
   motion_start( g_FilamentDiameter );
 

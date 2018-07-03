@@ -2,7 +2,7 @@
 <html lang="en-us">
   <head>
     <meta charset="utf-8">
-    <title>IceSL-online</title>
+    <title>Virtual 3d printer</title>
 		<link rel="stylesheet" href="bootstrap.css">
 		<script src="bootstrap.js" charset="utf-8"></script>
     <style>
@@ -150,8 +150,6 @@ ul li {
     
     <h2 id="report_msg"></h2> 
     
-    <p id="icesl_link"><a href="" target="_blank">Virtual 3D Printer</a></p>
-
    <script>
    function parseCommandLine()
    {
@@ -194,7 +192,7 @@ ul li {
         };
         xhr.onload = function () {
           if (this.status === 200) {
-            FS.writeFile('/script.lua', new Uint8Array(xhr.response), { encoding: "binary" });
+            FS.writeFile('/print.gcode', new Uint8Array(xhr.response), { encoding: "binary" });
             Module.endDownload();
           }
         };
@@ -206,7 +204,7 @@ ul li {
     <script type='text/javascript'>
       var editor = ace.edit("editor");
       editor.setTheme("ace/theme/monokai");
-      editor.getSession().setMode("ace/mode/lua");
+      editor.getSession().setMode("ace/mode/gcode");
       editor.setFontSize(16);
 
       function reportError(line,msg)
@@ -220,12 +218,12 @@ ul li {
         var text = editor.getSession().getValue();
         document.getElementById("report_line").innerHTML = '';
         document.getElementById("report_msg").innerHTML = '';
-        FS.writeFile('/script.lua', text);
+        FS.writeFile('/print.gcode', text);
       }        
 
       function setupEditor()
       {
-        /*var code = FS.readFile('script.lua', { encoding: 'utf8' });
+        var code = FS.readFile('icesl.gcode', { encoding: 'utf8' });
         editor.setValue(code);
         editor.clearSelection();
         editor.getSession().on('change', function() 
@@ -235,7 +233,7 @@ ul li {
             console.log('restarting');
           }
           tmExec = setTimeout(save,1000);
-        });*/
+        });         
       }
       
       var Module = {
@@ -305,15 +303,14 @@ ul li {
       }
     </script>
    
-    <script async type="text/javascript" src="icesl-online.js"></script>
+    <script async type="text/javascript" src="icesl-vrprint.js"></script>
     
   
 <center>
 <div class="hero-unit" style="background-color: #404040;  color: #ffffff; width: 1790px; height: 60px; margin: 10px; margin-left: 0px; margin-right: 0px; text-shadow: 0px 1px #0f0f0f; text-align: left; position: absolute; top: 0px;">
-<h1 style="position: relative; top:-25px;">IceSL-Online</h1>
-<p style="position: relative; top:-25px;">Make from code</p>
-<a style="position: relative; color: #a0a0a0; top: -135px; left: 350px; " >BETA</a>
-<p id="warning"><span style="color:#ff8080; font-size:15px;">IceSL-Online works best with Firefox or Chrome</span></p>
+<h1 style="position: relative; top:-25px;">Virtual 3D printer</h1>
+<p style="position: relative; top:-25px;">Preview and test GCode</p>
+<p id="warning"><span style="color:#ff8080; font-size:15px;">Works best with Firefox or Chrome</span></p>
 <script>
 if( window.navigator.userAgent.indexOf("Edge") < 0 && ( window.navigator.userAgent.indexOf("Firefox") > -1 || window.navigator.userAgent.indexOf("Chrome") > -1 ) )
 	document.getElementById("warning").style.visibility = "hidden";
@@ -325,18 +322,18 @@ if( window.navigator.userAgent.indexOf("Edge") < 0 && ( window.navigator.userAge
 <div class="hero-unit" style="background-color: #404040; color: #fffff8; width: 1790px ; margin: 10px; margin-left: 0px; margin-right: 0px; text-align: left ; font-size: 14px ; padding-top: 8px ; padding-bottom: 8px ; line-height: 16px;
 position: absolute; top: 965px">
 
-IceSL-online is powered by the amazing <a href="https://github.com/kripken/emscripten">Emscripten</a>, <a href="http://www.angusj.com/delphi/clipper.php">Clipper</a>, <a href="http://www.lua.org/">Lua</a> and <a href="https://github.com/ocornut/imgui">ImGui</a> libraries. The website uses <a href="https://github.com/eligrey/FileSaver.js/">Blob.js, Filesaver.js</a> as well as bootstrap.js. Many thanks to the authors and contributors of these libraries.
+Virtual 3d printer is powered by the amazing <a href="https://github.com/kripken/emscripten">Emscripten</a> and <a href="https://github.com/ocornut/imgui">ImGui</a> libraries. The website uses <a href="https://github.com/eligrey/FileSaver.js/">Blob.js, Filesaver.js</a> as well as bootstrap.js. Many thanks to the authors and contributors of these libraries.
 </div>
 </center>
 
 <center>
 <div class="hero-unit" style="background-color: #404040;  color: #fffff8; width: 1790px ; margin: 10px; margin-left: 0px; margin-right: 0px; text-align: left ; font-size: 10px ; padding-top: 8px ; padding-bottom: 8px ; line-height: 12px; 
 position: absolute; top: 1005px">
-	<p>(c) Sylvain Lefebvre / Inria 2016, all rights reserved.</p>
+	<p>(c) Sylvain Lefebvre / Inria 2018, all rights reserved.</p>
 <p>Access to this software is provided for free for educational and research purposes, 
 as well as for individual non-profit, non-commercial use.
 <a href="sylvain.lefebvre@inria.fr">Contact us</a> for any other use.</p>
-<p>The root url for this script is <i>http://shapeforge.loria.fr/icesl-online</i>. 
+<p>The root url for this script is <i>http://shapeforge.loria.fr/icesl-vrprint</i>. 
 This web page and all associated javascript codes should NOT be copied, redistributed, reverse engineered,
 or included by pages or scripts located at an external URL.
 You are welcome to redirect users directly to this website.</p>
