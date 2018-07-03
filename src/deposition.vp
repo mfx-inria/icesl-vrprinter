@@ -3,11 +3,20 @@ attribute vec3 mvf_color0;
 
 uniform mat4   u_projection;
 uniform mat4   u_view;
+uniform mat4   u_model;
+
+uniform float  u_height;
 
 varying vec3   v_pos;
 
 void main()
 {
-  v_pos = (u_projection * u_view * mvf_vertex).xyz;
-  gl_Position = u_projection * u_view * mvf_vertex;
+  vec3 vertex = mvf_vertex.xyz;
+  vertex.z = clamp(vertex.z , -u_height,u_height);
+
+  vec4 view_vertex = u_view * u_model * vec4(vertex, 1.0);
+  vec4 proj_vertex  = u_projection * view_vertex;
+  
+  v_pos = view_vertex.xyz;
+  gl_Position = proj_vertex;
 }

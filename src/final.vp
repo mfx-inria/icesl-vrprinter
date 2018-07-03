@@ -1,0 +1,11 @@
+attribute vec4 mvf_vertex;
+
+uniform mat4   u_projview;
+
+varying vec2   v_uv;
+
+void main()
+{
+  v_uv         = mvf_vertex.xy;
+  gl_Position  = u_projview * mvf_vertex;
+}

@@ -18,3 +18,6 @@ float gcode_speed();
 
 // return current line in gcode stream
 int gcode_line();
+
+// restart from scratch
+void gcode_reset();

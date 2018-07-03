@@ -6,14 +6,24 @@
 
 v4f   g_CurrentPos = v4f(0);
 float g_CurrentFlow = 0.0f;
+float g_FilamentArea = (float)M_PI * 1.75f*1.75f;
 
 // --------------------------------------------------------------
 
-void  motion_start()
+void  motion_start(float filament_diameter_mm)
 {
+  g_FilamentArea = (float)M_PI * filament_diameter_mm * filament_diameter_mm;
   g_CurrentPos = v4f(0);
   g_CurrentFlow = 0.0f;
   gcode_advance();
+}
+
+// --------------------------------------------------------------
+
+void motion_reset(float filament_diameter_mm)
+{
+  gcode_reset();
+  motion_start(filament_diameter_mm);
 }
 
 // --------------------------------------------------------------
@@ -38,22 +48,23 @@ bool  motion_step(float delta_ms)
   float len      = length(delta_pos);
   float delta_e  = gcode_next_pos()[3] - g_CurrentPos[3];
   float len_step = delta_ms * gcode_speed() / 1000.0f;
+  float step_e   = 0.0f;
+  v3f   step_pos = 0.0f;
   if (len < 1e-6f && fabs(delta_e) > 1e-6f) {
     // E motion only
-    float step_e = min(fabs(delta_e),len_step) * sign(delta_e);
-    g_CurrentFlow = step_e;
-    g_CurrentPos[3] += step_e;
+    step_e = min(fabs(delta_e),len_step) * sign(delta_e);
   } else {
     // all axis motion
     v3f dir = normalize_safe(delta_pos);
-    v3f step_pos = dir * min(len, len_step);
-    float step_e = 0.0f;
+    step_pos = dir * min(len, len_step);
     if (len > 1e-10f) {
       step_e = delta_e * length(step_pos) / len;
     }
-    g_CurrentFlow = step_e;
-    g_CurrentPos += v4f(step_pos, step_e);
   }
+  if (g_CurrentPos[3] > -step_e) {
+    g_CurrentFlow = min(g_CurrentPos[3] + step_e, step_e) * g_FilamentArea / delta_ms;
+  }
+  g_CurrentPos += v4f(step_pos, step_e);
 
   // NOTE: this ignores the fact that motion continues on the next
   //       segment during the same time step. TODO (recurse?)

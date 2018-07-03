@@ -1,0 +1,13 @@
+attribute vec4 mvf_vertex;
+attribute vec3 mvf_color0;
+
+uniform mat4   u_projection;
+uniform mat4   u_view;
+
+varying vec3   v_color;
+
+void main()
+{
+  v_color = mvf_vertex.xyz;
+  gl_Position = u_projection * u_view * mvf_vertex;
+}
