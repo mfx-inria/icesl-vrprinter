@@ -184,13 +184,29 @@ void ImGuiPanel()
     ImGui::Begin("Virtual 3D printer");
     ImGui::PushItemWidth(200);
     ImGui::InputFloat3("XYZ (mm)", &motion_get_current_pos()[0]);
+    // flow graph
     float flow = motion_get_current_flow() * 1000.0f;
     static std::vector<float> flows;
+    if (flows.empty()) {
+      flows.resize(64, 0.0f);
+    }
     flows.push_back(flow);
     if (flows.size() > 64) {
       flows.erase(flows.begin());
     }
     ImGui::PlotLines("Flow (mm^3/sec)", &flows[0], flows.size());
+    // speed graph
+    float speed = gcode_speed();
+    static std::vector<float> speeds;
+    if (speeds.empty()) {
+      speeds.resize(64, 0.0f);
+    }
+    speeds.push_back(speed);
+    if (speeds.size() > 64) {
+      speeds.erase(speeds.begin());
+    }
+    ImGui::PlotLines("Spped (mm/sec)", &speeds[0], speeds.size());
+
     ImGui::End();
 
   } else { // fatal error
