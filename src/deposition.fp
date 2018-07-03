@@ -10,5 +10,5 @@ void main()
   float z   = (-v_pos.z - u_ZNear) / (u_ZFar - u_ZNear);
   float z_h = floor(z * 256.0) / 255.0;
   float z_l = fract(z * 256.0);
-  gl_FragColor = vec4(z_l, z_h, z, 1.0);
+  gl_FragColor = vec4(z_l, z_h, 0.0, 1.0);
 }

@@ -185,7 +185,12 @@ void ImGuiPanel()
     ImGui::PushItemWidth(200);
     ImGui::InputFloat3("XYZ (mm)", &motion_get_current_pos()[0]);
     float flow = motion_get_current_flow() * 1000.0f;
-    ImGui::InputFloat("Flow (mm^3/sec)", &flow);
+    static std::vector<float> flows;
+    flows.push_back(flow);
+    if (flows.size() > 64) {
+      flows.erase(flows.begin());
+    }
+    ImGui::PlotLines("Flow (mm^3/sec)", &flows[0], flows.size());
     ImGui::End();
 
   } else { // fatal error
@@ -264,6 +269,7 @@ void mainRender()
     gcode_start(g_GCode_string.c_str());
     motion_start(g_FilamentDiameter);
     std::remove("/print.gcode");
+    g_ForceRedraw = true;
   }
 #endif
 
@@ -313,7 +319,7 @@ void mainRender()
     g_ShaderDeposition.u_view.set(view);
     g_ShaderDeposition.u_ZNear.set(ZNear);
     g_ShaderDeposition.u_ZFar.set(ZFar);
-    ForIndex(i, 100) {
+    ForIndex(i, 200) {
       // step motion
       bool done;
       float delta_ms = motion_step(time_step_ms, done);
@@ -537,7 +543,7 @@ int main(int argc, const char **argv)
   g_ShaderFinal.emscripten = "precision mediump float;\n";
 #endif
   g_ShaderFinal.init();
-  g_RT = RenderTarget2DRGBA_Ptr(new RenderTarget2DRGBA(g_RTWidth, g_RTHeight));
+  g_RT = RenderTarget2DRGBA_Ptr(new RenderTarget2DRGBA(g_RTWidth, g_RTHeight, GPUTEX_AUTOGEN_MIPMAP));
   g_RT->bind();
   glViewport(0, 0, g_RenderWidth, g_RenderHeight);
   LibSL::GPUHelpers::clearScreen(LIBSL_COLOR_BUFFER | LIBSL_DEPTH_BUFFER, 0.0f, 0.0f, 0.0f);
