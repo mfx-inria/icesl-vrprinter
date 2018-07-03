@@ -14,8 +14,8 @@ v4f   motion_get_current_pos();
 float motion_get_current_flow();
 
 // performs the next motion step, takes as input the step in milliseconds
-// returns false if end of motion
-bool  motion_step(float delta_ms);
+// returns the consumed time (may be less than delta_ms)
+float motion_step(float delta_ms,bool& _done);
 
 // restarts from scratch
 void motion_reset(float filament_diameter_mm);

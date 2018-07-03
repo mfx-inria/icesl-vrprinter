@@ -9,7 +9,7 @@ uniform vec2      u_texscl;
 uniform float  u_ZNear;
 uniform float  u_ZFar;
 
-float decode_float(vec2 v) { return (v.x + v.y*256.0) / 257.0; }  // 65535 = 255*257
+float decode_float(vec4 v) { return (v.x*256.0 + v.y*255.0*256.0) / 65536.0; }
 
 void main()
 {
@@ -17,12 +17,12 @@ void main()
 
   if (tex.w == 0.0) discard;
 
-  float z_00 = decode_float(tex.xy);
-  float z_01 = decode_float(texture2D(u_texpts, v_uv * u_texscl + u_pixsz.xz).xy);
-  float z_10 = decode_float(texture2D(u_texpts, v_uv * u_texscl + u_pixsz.zy).xy);
+  float z_00 = decode_float(tex);
+  float z_01 = decode_float(texture2D(u_texpts, v_uv * u_texscl + u_pixsz.xz));
+  float z_10 = decode_float(texture2D(u_texpts, v_uv * u_texscl + u_pixsz.zy));
 
-  vec3 p = vec3(- 0.1 * u_pixsz.xz / u_texscl, z_01 - z_00);
-  vec3 q = vec3(- 0.1 *u_pixsz.zy / u_texscl, z_10 - z_00);
+  vec3 p = vec3(0.25 * u_pixsz.xz / u_texscl, z_01 - z_00);
+  vec3 q = vec3(0.25 * u_pixsz.zy / u_texscl, z_10 - z_00);
 
   vec3 nrm = normalize(cross(p, q));
 

@@ -41,7 +41,6 @@ int           g_RTWidth  = 1024;
 int           g_RTHeight = 1024;
 
 v2f           g_BedSize(200.0f, 150.0f);
-
 float         g_FilamentDiameter = 1.75f;
 
 typedef GPUMESH_MVF1(mvf_vertex_3f)                mvf_mesh;
@@ -51,6 +50,7 @@ AutoPtr<SimpleMesh>                      g_GPUMesh_quad;
 AutoPtr<SimpleMesh>                      g_GPUMesh_axis;
 
 AutoPtr<MeshRenderer<mvf_mesh> >         g_GPUMesh_sphere;
+AutoPtr<MeshRenderer<mvf_mesh> >         g_GPUMesh_cylinder;
 
 #include "simple.h"
 AutoBindShader::simple     g_ShaderSimple;
@@ -66,6 +66,8 @@ bool   g_Rotating = false;
 bool   g_Dragging = false;
 float  g_Zoom = 1.0f;
 float  g_ZoomTarget = 1.0f;
+
+v3f    g_PrevPos(0.0f);
 
 bool   g_ForceRedraw = true;
 bool   g_FatalError = false;
@@ -177,8 +179,11 @@ void ImGuiPanel()
     }
     ImGui::SetNextWindowPos(ImVec2(0, 0), ImGuiSetCond_Once);
     ImGui::SetNextWindowSize(ImVec2(g_UIWidth, 750), ImGuiSetCond_Once);
-    ImGui::Begin("3D printing");
+    ImGui::Begin("Virtual 3D printer");
     ImGui::PushItemWidth(200);
+    ImGui::InputFloat3("XYZ (mm)", &motion_get_current_pos()[0]);
+    float flow = motion_get_current_flow() * 1000.0f;
+    ImGui::InputFloat("Flow (mm^3/sec)", &flow);
     ImGui::End();
 
   } else { // fatal error
@@ -222,6 +227,27 @@ string jsEncodeString(const char *strin)
 
 // ----------------------------------------------------------------
 
+m4x4f alignAlongSegment(const v3f& p0, const v3f& p1)
+{
+  v3f d = p1 - p0;
+  float l = sqrt(dot(d, d));
+  v3f   u = normalize_safe(d);
+  v3f   u_xy = normalize_safe(v3f(d[0], d[1], 0));
+  float aglZ = atan2(u_xy[0], u_xy[1]);
+  float aglX = atan2(u[2], length(v3f(u[0], u[1], 0)));
+  return translationMatrix((p0 + p1)*0.5f)
+    * quatf(v3f(0, 0, 1), -aglZ).toMatrix()
+    * quatf(v3f(1, 0, 0), (float)M_PI / 2.0f).toMatrix()
+    * quatf(v3f(1, 0, 0), aglX).toMatrix()
+    * translationMatrix(v3f(0, 0, -l/2.0f))
+    * scaleMatrix(v3f(1, 1, l));
+}
+
+// ----------------------------------------------------------------
+
+const float ZNear = 0.1f;
+const float ZFar  = 500.0f;
+
 void mainRender()
 {
   static t_time tm_lastChange = milliseconds();
@@ -236,7 +262,7 @@ void mainRender()
     bx.addPoint(-v3f(100.0));
     bx.addPoint( v3f(100.0));
     float ex = tupleMax(bx.extent());
-    m4x4f proj = perspectiveMatrixGL<float>((float)M_PI / 6.0f, 1.0f, 0.01f, 1000.0f);
+    m4x4f proj = perspectiveMatrixGL<float>((float)M_PI / 6.0f, 1.0f, ZNear, ZFar);
       //bx.center()[0] - ex * 0.8f, bx.center()[0] + ex * 0.8f,
       //bx.center()[1] - ex * 0.8f, bx.center()[1] + ex * 0.8f,
       //bx.center()[2] - ex * 4.0f, bx.maxCorner()[2] + ex * 4.0f);
@@ -264,38 +290,56 @@ void mainRender()
       LibSL::GPUHelpers::clearScreen(LIBSL_COLOR_BUFFER | LIBSL_DEPTH_BUFFER, 0.0f, 0.0f, 0.0f);
       // reset motion
       motion_reset(g_FilamentDiameter);
+      g_PrevPos = v3f(0.0f);
     }
 
     glEnable(GL_CULL_FACE);
 
-    const float time_step_ms = 10;
+    const float time_step_ms = 1000;
 
     g_ShaderDeposition.begin();
     g_ShaderDeposition.u_projection.set(proj);
     g_ShaderDeposition.u_view.set(view);
-    g_ShaderDeposition.u_ZNear.set(0.01f);
-    g_ShaderDeposition.u_ZFar.set(1000.0f);
-    ForIndex(i, 10) {
-      // compute sphere radius
-      float vf = motion_get_current_flow() * time_step_ms; // mm^3 / sec
-      if (vf > 2.0f) {
-        cerr << vf << " " << gcode_line() << endl;
-        cerr << endl;
-      }
+    g_ShaderDeposition.u_ZNear.set(ZNear);
+    g_ShaderDeposition.u_ZFar.set(ZFar);
+    ForIndex(i, 100) {
+      // step motion
+      bool done;
+      float delta_ms = motion_step(time_step_ms, done);
+      // pushed material volume during time interval
+      float vf = motion_get_current_flow() * delta_ms; // recover pushed mm^3
+      float t = 0.3f; // TODO
+      v3f pos = v3f(motion_get_current_pos()) - v3f(g_BedSize[0] / 2.0f, g_BedSize[1] / 2.0f, 0.0f);
       if (vf > 0.0f) {
-        float r = pow(vf*(3.0f / 4.0f) / (float)M_PI, 1.0f / 3.0f); // v = 4/3*pi*r^3
-        float h = 0.3f; // TODO
-        float rs = sphere_squashed_radius(r, h);
-        g_ShaderDeposition.u_height.set(h);
-        // add sphere
+        float len = length(pos - g_PrevPos);
+        float sec = vf / len;
+        float r   = sqrt(sec / (float)M_PI); // sec = pi*r^2
+        float rs  = sphere_squashed_radius(r, t/2.0f);
+        g_ShaderDeposition.u_height.set(pos[2]);
+        g_ShaderDeposition.u_thickness.set(t);
+        // add cylinder from previous
         g_ShaderDeposition.u_model.set(
-          translationMatrix(v3f(motion_get_current_pos()) - v3f(g_BedSize[0] / 2.0f, g_BedSize[1] / 2.0f, 0.0f))
-          *scaleMatrix(v3f(rs)));
+          translationMatrix(v3f(0, 0, -rs/2.0f))
+         *alignAlongSegment(v3f(g_PrevPos), v3f(pos))
+         *scaleMatrix(v3f(rs, rs, 1))
+        );
+        g_GPUMesh_cylinder->render();
+        // add spheres
+        g_ShaderDeposition.u_model.set(
+           translationMatrix(g_PrevPos)
+          *translationMatrix(v3f(0,0,-rs/2.0f))
+          *scaleMatrix(v3f(rs))
+        );
+        g_GPUMesh_sphere->render();
+        g_ShaderDeposition.u_model.set(
+          translationMatrix(pos)
+          *translationMatrix(v3f(0, 0, -rs / 2.0f))
+          *scaleMatrix(v3f(rs))
+        );
         g_GPUMesh_sphere->render();
       }
-      // step motion
-      motion_step(time_step_ms);
-    }
+      g_PrevPos = pos;
+    } // iter
     g_ShaderDeposition.end();
 
     g_RT->unbind();
@@ -489,6 +533,7 @@ int main(int argc, const char **argv)
   g_RT->unbind();
 
   g_GPUMesh_sphere = AutoPtr<MeshRenderer<mvf_mesh> >( new MeshRenderer<mvf_mesh>(shape_sphere( 1.0f )) );
+  g_GPUMesh_cylinder = AutoPtr<MeshRenderer<mvf_mesh> >(new MeshRenderer<mvf_mesh>(shape_cylinder(1.0f, 1.0f, 1.0f)));
 
   /// default view
   TrackballUI::trackball().set(v3f(0,0,-300.0f), v3f(0), quatf(v3f(1, 0, 0), -1.0f)*quatf(v3f(0, 0, 1), 0.0f));
