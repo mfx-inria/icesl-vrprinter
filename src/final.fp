@@ -26,7 +26,7 @@ void main()
 
   vec3 nrm = normalize(cross(p, q));
 
-  gl_FragColor = vec4(nrm.zzz,1.0);
+  gl_FragColor = vec4(nrm.zzz * vec3(1.0, 1.0-tex.z, 1.0-tex.z),1.0);
 
   // gl_FragColor = tex;
 }

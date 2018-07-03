@@ -343,8 +343,10 @@ void mainRender()
       float vf = motion_get_current_flow() * delta_ms; // recover pushed mm^3
       float t = 0.3f; // TODO
       v3f pos = v3f(motion_get_current_pos()) - v3f(g_BedSize[0] / 2.0f, g_BedSize[1] / 2.0f, 0.0f);
+      float len = length(pos - g_PrevPos);
       if (vf > 0.0f) {
-        float len = length(pos - g_PrevPos);
+        // print move
+        g_ShaderDeposition.u_travel.set(false);
         float sec = vf / len;
         float r   = sqrt(sec / (float)M_PI); // sec = pi*r^2
         float rs  = sphere_squashed_radius(r, t/2.0f);
@@ -370,6 +372,34 @@ void mainRender()
           *scaleMatrix(v3f(rs))
         );
         g_GPUMesh_sphere->render();
+      } else {
+        // travel move
+        /*
+        g_ShaderDeposition.u_travel.set(true);
+        float rd = 0.5f;
+        g_ShaderDeposition.u_height.set(pos[2]);
+        g_ShaderDeposition.u_thickness.set(1e9f);
+        // add cylinder from previous
+        g_ShaderDeposition.u_model.set(
+          translationMatrix(v3f(0, 0, -0.5f / 2.0f))
+          *alignAlongSegment(v3f(g_PrevPos), v3f(pos))
+          *scaleMatrix(v3f(rd, rd, 1))
+        );
+        g_GPUMesh_cylinder->render();
+        // add spheres
+        g_ShaderDeposition.u_model.set(
+          translationMatrix(g_PrevPos)
+          *translationMatrix(v3f(0, 0, -rd / 2.0f))
+          *scaleMatrix(v3f(rd))
+        );
+        g_GPUMesh_sphere->render();
+        g_ShaderDeposition.u_model.set(
+          translationMatrix(pos)
+          *translationMatrix(v3f(0, 0, -rd / 2.0f))
+          *scaleMatrix(v3f(rd))
+        );
+        g_GPUMesh_sphere->render();
+        */
       }
       g_PrevPos = pos;
     } // iter
