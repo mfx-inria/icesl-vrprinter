@@ -44,6 +44,40 @@ float sphere_squashed_radius(float r,float h)
   return sqrt( (2.0f *r*r*r + h*h*h) / (3.0f*h) );
 }
 
+// area of a disk
+float disk_area(float r)
+{
+  return (float)M_PI*r*r;
+}
+
+// area of a disk cap, height from top
+// http://mathworld.wolfram.com/CircularSegment.html
+float disk_cap_area(float r,float h)
+{
+  return r*r*acos((r-h)/r) - (r-h)*sqrt(2*r*h-h*h);
+}
+
+// finds the radius giving the same area to a squashed
+// disk (clipped at h, where h is height from center) 
+// as the area of the disk of radius r
+float disk_squashed_radius(float r, float h)
+{
+  // we search for rs such that:
+  // disk_area(rs) - disk_cap_area(rs,rs-h)*2 == disk_area(r)
+  float L = 0.0f;
+  float R = r * 10.0f; // assume this is enough?
+  float aT = disk_area(r);
+  while (fabs(L-R)>1e-6f) {
+    float m = (L + R)*0.5f;
+    float a = disk_area(m) - disk_cap_area(m, m - h) * 2;
+    if (a > aT) {
+      R = m;
+    } else {
+      L = m;
+    }
+  }
+  return R;
+}
 
 /*
 // for testing on e.g. http://cpp.sh/

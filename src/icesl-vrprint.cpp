@@ -44,7 +44,7 @@ v2f           g_BedSize(200.0f, 150.0f);
 float         g_FilamentDiameter = 1.75f;
 float         g_NozzleDiameter = 0.4f;
 
-float         g_TimeStep = 1.0f;
+float         g_TimeStep = 500.0f;
 float         g_GlobalTime = 0.0f;
 
 int           g_StartAtLine = 0;
@@ -245,6 +245,8 @@ void ImGuiPanel()
     // status
     ImGui::SetNextTreeNodeOpen(true);
     if (ImGui::CollapsingHeader("Status")) {
+      int line = gcode_line();
+      ImGui::InputInt("GCode line", &line);
       ImGui::InputFloat3("XYZ (mm)", &motion_get_current_pos()[0]);
       // flow graph
       float flow = motion_get_current_flow() * 1000.0f;
@@ -319,7 +321,7 @@ void rasterizeDiskInHeightField(const v2i& p,float z,float r)
   int N = ceil(r / c_HeightFieldStep);
   ForRange(nj, -N, N) {
     ForRange(ni, -N, N) {
-      if (sqrt((float)(ni*ni + nj * nj)) < N) {
+      if (sqrt((float)(ni * ni + nj * nj)) < N) {
         float& h = g_HeightField.at<Clamp>(p[0] + ni, p[1] + nj);
         h = max(h, z);
       }
@@ -453,25 +455,36 @@ void mainRender()
       g_GlobalTime += delta_ms;
       if (done) break;
       step_ms -= delta_ms;
+      // line highlighting
+#ifdef EMSCRIPTEN
+      static int last_line = -1;
+      if (gcode_line() != last_line) {
+        std::string command = "highlightLine(" + to_string(gcode_line()) + ");";
+        emscripten_run_script(command.c_str());
+        last_line = gcode_line();
+      }
+#endif
       // pushed material volume during time interval
       float vf = motion_get_current_flow() * delta_ms; // recover pushed mm^3
       v3f pos  = v3f(motion_get_current_pos());
-      float h = heightAt(pos, g_NozzleDiameter/2.0f);
-      float t = pos[2] - h;
+      float h  = heightAt(pos, g_NozzleDiameter / 2.0f);
+      float t  = pos[2] - h;
       // t = max(t, 0.01f);
       g_Trajectory.push_back(pos);
       float len = length(pos - g_PrevPos);
       if (vf > 0.0f) {
         // print move
-        float sec = vf / len;
-        float r   = sqrt(sec / (float)M_PI); // sec = pi*r^2
-        float rs  = sphere_squashed_radius(r, min(t/2.0f,r/2.0f));
+        float sa  = vf / len;
+        float r   = sqrt(sa / (float)M_PI); // sa = pi*r^2
+        float squash_t = min(t / 2.0f, r);
+        float rs  = disk_squashed_radius(r, squash_t);
+
         g_ShaderDeposition.u_height.set(pos[2]);
         g_ShaderDeposition.u_thickness.set(t);
         g_ShaderDeposition.u_radius.set(r);
         // add cylinder from previous
         g_ShaderDeposition.u_model.set(
-          translationMatrix(v3f(0, 0, -rs/2.0f))
+          translationMatrix(v3f(0, 0, -squash_t))
          *alignAlongSegment(v3f(g_PrevPos), v3f(pos))
          *scaleMatrix(v3f(rs, rs, 1))
         );
@@ -479,13 +492,13 @@ void mainRender()
         // add spheres
         g_ShaderDeposition.u_model.set(
            translationMatrix(g_PrevPos)
-          *translationMatrix(v3f(0,0,-rs/2.0f))
+          *translationMatrix(v3f(0,0,-squash_t))
           *scaleMatrix(v3f(rs))
         );
         g_GPUMesh_sphere->render();
         g_ShaderDeposition.u_model.set(
           translationMatrix(pos)
-          *translationMatrix(v3f(0, 0, -rs / 2.0f))
+          *translationMatrix(v3f(0, 0, -squash_t))
           *scaleMatrix(v3f(rs))
         );
         g_GPUMesh_sphere->render();

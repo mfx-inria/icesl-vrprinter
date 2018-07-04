@@ -23,8 +23,8 @@ void main()
   float z_01 = decode_float(texture2D(u_texpts, v_uv * u_texscl + u_pixsz.xz));
   float z_10 = decode_float(texture2D(u_texpts, v_uv * u_texscl + u_pixsz.zy));
 
-  vec3 p = vec3(0.25 * u_pixsz.xz / u_texscl, z_01 - z_00);
-  vec3 q = vec3(0.25 * u_pixsz.zy / u_texscl, z_10 - z_00);
+  vec3 p = vec3(0.2 * u_pixsz.xz / u_texscl, z_01 - z_00);
+  vec3 q = vec3(0.2 * u_pixsz.zy / u_texscl, z_10 - z_00);
 
   vec3 nrm = normalize(cross(p, q));
 
