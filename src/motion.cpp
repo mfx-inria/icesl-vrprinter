@@ -13,7 +13,7 @@ float g_FilamentArea = (float)M_PI * 1.75f*1.75f;
 
 void  motion_start(float filament_diameter_mm)
 {
-  g_FilamentArea = (float)M_PI * filament_diameter_mm * filament_diameter_mm;
+  g_FilamentArea = (float)M_PI * filament_diameter_mm * filament_diameter_mm / 4.0f;
   g_CurrentPos = v4f(0);
   g_CurrentFlow = 0.0f;
   g_ConsumedE = 0.0f;
@@ -24,8 +24,10 @@ void  motion_start(float filament_diameter_mm)
 
 void motion_reset(float filament_diameter_mm)
 {
-  gcode_reset();
-  motion_start(filament_diameter_mm);
+  g_FilamentArea = (float)M_PI * filament_diameter_mm * filament_diameter_mm / 4.0f;
+  g_CurrentPos = gcode_next_pos();
+  g_CurrentFlow = 0.0f;
+  g_ConsumedE = gcode_next_pos()[3];
 }
 
 // --------------------------------------------------------------

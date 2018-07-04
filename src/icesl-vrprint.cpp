@@ -47,6 +47,9 @@ float         g_NozzleDiameter = 0.4f;
 float         g_TimeStep = 1.0f;
 float         g_GlobalTime = 0.0f;
 
+int           g_StartAtLine = 0;
+bool          g_ColorOverhangs = false;
+
 std::string   g_GCode_string;
 
 typedef GPUMESH_MVF1(mvf_vertex_3f)                mvf_mesh;
@@ -146,12 +149,22 @@ void addBar(AutoPtr<T_Mesh> gpumesh, v3f a, v3f b, pair<v3f, v3f> uv, float sz =
 
 void printer_reset()
 {
-  motion_reset(g_FilamentDiameter);
+  gcode_reset();
   g_PrevPos = v3f(0.0f);
   g_Trajectory.clear();
-  g_HeightField.fill(0.0f);
   g_HeightSegments.clear();
   g_GlobalTime = 0.0f;
+  float prev_z = 0.0f;
+  float curr_z = 0.0f;
+  while (gcode_line() < g_StartAtLine) {
+    gcode_advance();
+    if (gcode_next_pos()[2] > curr_z) {
+      prev_z = curr_z;
+      curr_z = gcode_next_pos()[2];
+    }
+  }
+  g_HeightField.fill(prev_z);
+  motion_reset(g_FilamentDiameter);
 }
 
 // ----------------------------------------------------------------
@@ -213,7 +226,12 @@ void ImGuiPanel()
     if (ImGui::CollapsingHeader("Printer")) {      
       ImGui::InputFloat("Filament diameter", &g_FilamentDiameter, 0.0f, 0.0f, 3);
       g_FilamentDiameter = clamp(g_FilamentDiameter, 0.1f, 10.0f);
+      static float nozzleDiameter = g_NozzleDiameter;
+      ImGui::InputFloat("Nozzle diameter", &nozzleDiameter, 0.0f, 0.0f, 3);
+      g_NozzleDiameter = clamp(nozzleDiameter, c_HeightFieldStep*2.0f, 10.0f);      
+      ImGui::InputInt("Start at GCode line", &g_StartAtLine);
       if (ImGui::Button("Reset")) {
+        g_NozzleDiameter = nozzleDiameter;
         printer_reset();
         g_ForceRedraw = true;
       }
@@ -222,6 +240,7 @@ void ImGuiPanel()
     ImGui::SetNextTreeNodeOpen(true);
     if (ImGui::CollapsingHeader("Control")) {
       ImGui::SliderFloat("Time step (msec)", &g_TimeStep, 0.1f, 3000.0f,"%.1f",3.0f);
+      ImGui::Checkbox("Color overhangs", &g_ColorOverhangs);
     }
     // status
     ImGui::SetNextTreeNodeOpen(true);
@@ -321,9 +340,9 @@ void rasterizeInHeightField(const v3f& a, const v3f&b, float r)
   step = step / len;
   float l = 0.0f;
   while (l < len) {
-    cur += step * c_HeightFieldStep;
     v2i p = v2i(round((cur[0]) / c_HeightFieldStep), round((cur[1]) / c_HeightFieldStep));
     rasterizeDiskInHeightField(p, cur[2], r);
+    cur += step * c_HeightFieldStep;
     l += c_HeightFieldStep;
   }
 }
@@ -427,7 +446,6 @@ void mainRender()
     g_ShaderDeposition.u_ZNear.set(ZNear);
     g_ShaderDeposition.u_ZFar.set(ZFar);
     float step_ms = (float)g_TimeStep;
-    float layer_z = 0.0;
     while (step_ms > 0.0f) {
       // step motion
       bool done;
@@ -438,11 +456,9 @@ void mainRender()
       // pushed material volume during time interval
       float vf = motion_get_current_flow() * delta_ms; // recover pushed mm^3
       v3f pos  = v3f(motion_get_current_pos());
-      layer_z = max(layer_z, pos[2]);
       float h = heightAt(pos, g_NozzleDiameter/2.0f);
       float t = pos[2] - h;
-      // cerr << h << " " << t << endl;
-      t = max(t, 0.01f);
+      // t = max(t, 0.01f);
       g_Trajectory.push_back(pos);
       float len = length(pos - g_PrevPos);
       if (vf > 0.0f) {
@@ -474,15 +490,26 @@ void mainRender()
         );
         g_GPUMesh_sphere->render();
         // update height field
-        // rasterizeInHeightField(g_PrevPos,pos, rs*1.5f);
         t_height_segment seg;
         seg.a = pos;
         seg.b = g_PrevPos;
-        seg.time = pos[2]; // g_GlobalTime;
+        seg.time = max(pos[2], g_PrevPos[2]); // g_GlobalTime;
         seg.radius = rs;
         g_HeightSegments.push_back(seg);
       }
       g_PrevPos = pos;
+#if 1
+      // height segments (with delay)
+      auto S = g_HeightSegments.begin();
+      while (S != g_HeightSegments.end()) {
+        if (S->time < pos[2]) {
+          rasterizeInHeightField(S->a, S->b, S->radius);
+          S = g_HeightSegments.erase(S);
+        } else {
+          S++;
+        }
+      }
+#endif
     } // iter
     g_ShaderDeposition.end();
 
@@ -496,19 +523,6 @@ void mainRender()
     if (!g_Trajectory.empty()) {
       g_Trajectory.erase(g_Trajectory.begin());
     }
-
-#if 1
-    // height segments (with delay)
-    auto S = g_HeightSegments.begin();
-    while (S != g_HeightSegments.end()) {
-      if (S->time < motion_get_current_pos()[2]) {
-        rasterizeInHeightField(S->a,S->b,S->radius);
-        S = g_HeightSegments.erase(S);
-      } else {
-        S++;
-      }
-    }
-#endif
 
     if (!redraw) {
       tm_lastChange = milliseconds();
@@ -526,6 +540,7 @@ void mainRender()
     g_ShaderFinal.u_texscl.set(v2f(g_RenderWidth / (float)g_RTWidth, g_RenderHeight / (float)g_RTHeight));
     g_ShaderFinal.u_ZNear.set(0.01f);
     g_ShaderFinal.u_ZFar.set(1000.0f);
+    g_ShaderFinal.u_color_overhangs.set(g_ColorOverhangs ? 1 : 0);
     glActiveTexture(GL_TEXTURE0);
     glBindTexture(GL_TEXTURE_2D, g_RT->texture());
     g_GPUMesh_quad->render();
@@ -563,14 +578,16 @@ void mainRender()
     g_ShaderSimple.u_view.set(view);
     g_ShaderSimple.u_color.set(v4f(0, 0, 1, 1));
     g_ShaderSimple.u_alpha.set(1);
-    ForArray2D(g_HeightField, i, j) {
-      if (g_HeightField.at(i, j) > 0) {
-        g_ShaderSimple.u_view.set(
-          view
-          *translationMatrix(v3f((i+0.5f)*c_HeightFieldStep,(j+0.5f)*c_HeightFieldStep, g_HeightField.at(i, j)))
-          *scaleMatrix(v3f(0.2f))
-        );
-        g_GPUMesh_sphere->render();
+    ForRange(j, 550, 750) {
+      ForRange(i, 900, 1100) {
+        if (g_HeightField.at(i, j) > 22.8f) {
+          g_ShaderSimple.u_view.set(
+            view
+            *translationMatrix(v3f((i + 0.5f)*c_HeightFieldStep, (j + 0.5f)*c_HeightFieldStep, g_HeightField.at(i, j)))
+            *scaleMatrix(v3f(0.2f))
+          );
+          g_GPUMesh_sphere->render();
+        }
       }
     }
     g_ShaderSimple.end();
@@ -777,6 +794,8 @@ int main(int argc, const char **argv)
   gcode_start(g_GCode_string.c_str());
 #endif
   motion_start( g_FilamentDiameter );
+
+  printer_reset();
 
   /// main loop
   TrackballUI::loop();

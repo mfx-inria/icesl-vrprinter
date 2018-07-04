@@ -9,6 +9,8 @@ uniform vec2      u_texscl;
 uniform float  u_ZNear;
 uniform float  u_ZFar;
 
+uniform int    u_color_overhangs;
+
 float decode_float(vec4 v) { return (v.x*256.0 + v.y*255.0*256.0) / 65536.0; }
 
 void main()
@@ -26,7 +28,10 @@ void main()
 
   vec3 nrm = normalize(cross(p, q));
 
-  gl_FragColor = vec4(nrm.zzz * vec3(1.0, 1.0-tex.z, 1.0-tex.z),1.0);
-
+  if (u_color_overhangs == 1) {
+    gl_FragColor = vec4(nrm.zzz * vec3(1.0, 1.0-tex.z, 1.0-tex.z),1.0);
+  } else {
+    gl_FragColor = vec4(nrm.zzz,1.0);
+  }
   // gl_FragColor = tex;
 }
