@@ -42,6 +42,10 @@ int           g_RTHeight = 1024;
 
 v2f           g_BedSize(200.0f, 150.0f);
 float         g_FilamentDiameter = 1.75f;
+float         g_NozzleDiameter = 0.4f;
+
+float         g_TimeStep = 1.0f;
+float         g_GlobalTime = 0.0f;
 
 std::string   g_GCode_string;
 
@@ -68,6 +72,21 @@ bool   g_Rotating = false;
 bool   g_Dragging = false;
 float  g_Zoom = 1.0f;
 float  g_ZoomTarget = 1.0f;
+
+std::vector<v3f>                 g_Trajectory;
+
+typedef struct 
+{
+  float time;
+  float radius;
+  v3f   a;
+  v3f   b;
+} t_height_segment;
+
+std::list<t_height_segment> g_HeightSegments;
+
+const float c_HeightFieldStep = 0.1f; // mm
+Array2D<float>   g_HeightField;
 
 v3f    g_PrevPos(0.0f);
 
@@ -125,18 +144,14 @@ void addBar(AutoPtr<T_Mesh> gpumesh, v3f a, v3f b, pair<v3f, v3f> uv, float sz =
 
 // ----------------------------------------------------------------
 
-// return (*this)[c + r * 4];
-static inline void matrixMul(const m4x4f& m, const v3f& pt, v3f& _r)
+void printer_reset()
 {
-  _r[0] = _r[1] = _r[2] = 0.0f;
-  const float *ptr = &m[0];
-  ForIndex(i, 3) {
-    _r[i] += ptr[0] * pt[0];
-    _r[i] += ptr[1] * pt[1];
-    _r[i] += ptr[2] * pt[2];
-    _r[i] += ptr[3];
-    ptr += 4;
-  }
+  motion_reset(g_FilamentDiameter);
+  g_PrevPos = v3f(0.0f);
+  g_Trajectory.clear();
+  g_HeightField.fill(0.0f);
+  g_HeightSegments.clear();
+  g_GlobalTime = 0.0f;
 }
 
 // ----------------------------------------------------------------
@@ -155,6 +170,15 @@ void makeAxisMesh()
 
 bool                                     g_Downloading = false;
 float                                    g_DownloadProgress = 0.0f;
+
+// ----------------------------------------------------------------
+
+std::vector<float> g_Flows(64,0.0f);
+int                g_FlowsCount = 0;
+float              g_FlowsSample = 0.0f;
+std::vector<float> g_Speeds(64,0.0f);
+int                g_SpeedsCount = 0;
+float              g_SpeedsSample = 0.0f;
 
 // ----------------------------------------------------------------
 
@@ -183,30 +207,51 @@ void ImGuiPanel()
     ImGui::SetNextWindowSize(ImVec2(g_UIWidth, 750), ImGuiSetCond_Once);
     ImGui::Begin("Virtual 3D printer");
     ImGui::PushItemWidth(200);
-    ImGui::InputFloat3("XYZ (mm)", &motion_get_current_pos()[0]);
-    // flow graph
-    float flow = motion_get_current_flow() * 1000.0f;
-    static std::vector<float> flows;
-    if (flows.empty()) {
-      flows.resize(64, 0.0f);
-    }
-    flows.push_back(flow);
-    if (flows.size() > 64) {
-      flows.erase(flows.begin());
-    }
-    ImGui::PlotLines("Flow (mm^3/sec)", &flows[0], flows.size());
-    // speed graph
-    float speed = gcode_speed();
-    static std::vector<float> speeds;
-    if (speeds.empty()) {
-      speeds.resize(64, 0.0f);
-    }
-    speeds.push_back(speed);
-    if (speeds.size() > 64) {
-      speeds.erase(speeds.begin());
-    }
-    ImGui::PlotLines("Spped (mm/sec)", &speeds[0], speeds.size());
 
+    // printer setup
+    ImGui::SetNextTreeNodeOpen(true);
+    if (ImGui::CollapsingHeader("Printer")) {      
+      ImGui::InputFloat("Filament diameter", &g_FilamentDiameter, 0.0f, 0.0f, 3);
+      g_FilamentDiameter = clamp(g_FilamentDiameter, 0.1f, 10.0f);
+      if (ImGui::Button("Reset")) {
+        printer_reset();
+        g_ForceRedraw = true;
+      }
+    }
+    // control
+    ImGui::SetNextTreeNodeOpen(true);
+    if (ImGui::CollapsingHeader("Control")) {
+      ImGui::SliderFloat("Time step (msec)", &g_TimeStep, 0.1f, 3000.0f,"%.1f",3.0f);
+    }
+    // status
+    ImGui::SetNextTreeNodeOpen(true);
+    if (ImGui::CollapsingHeader("Status")) {
+      ImGui::InputFloat3("XYZ (mm)", &motion_get_current_pos()[0]);
+      // flow graph
+      float flow = motion_get_current_flow() * 1000.0f;
+      g_FlowsSample += flow;
+      g_FlowsCount++;
+      if (g_FlowsCount == 32) {
+        g_FlowsSample /= (float)g_FlowsCount;
+        g_Flows.erase(g_Flows.begin());
+        g_Flows.push_back(g_FlowsSample);
+        g_FlowsCount = 0;
+        g_FlowsSample = 0.0f;
+      }      
+      ImGui::PlotLines("Flow (mm^3/sec)", &g_Flows[0], g_Flows.size());
+      // speed graph
+      float speed = gcode_speed();
+      g_SpeedsSample += speed;
+      g_SpeedsCount++;
+      if (g_SpeedsCount == 32) {
+        g_SpeedsSample /= (float)g_SpeedsCount;
+        g_Speeds.erase(g_Speeds.begin());
+        g_Speeds.push_back(g_SpeedsSample);
+        g_SpeedsCount = 0;
+        g_SpeedsSample = 0.0f;
+      }
+      ImGui::PlotLines("Speed (mm/sec)", &g_Speeds[0], g_Speeds.size());
+    }
     ImGui::End();
 
   } else { // fatal error
@@ -246,6 +291,55 @@ string jsEncodeString(const char *strin)
     i++;
   }
   return str;
+}
+
+// ----------------------------------------------------------------
+
+void rasterizeDiskInHeightField(const v2i& p,float z,float r)
+{
+  int N = ceil(r / c_HeightFieldStep);
+  ForRange(nj, -N, N) {
+    ForRange(ni, -N, N) {
+      if (sqrt((float)(ni*ni + nj * nj)) < N) {
+        float& h = g_HeightField.at<Clamp>(p[0] + ni, p[1] + nj);
+        h = max(h, z);
+      }
+    }
+  }
+}
+
+void rasterizeInHeightField(const v3f& a, const v3f&b, float r)
+{
+  v3f cur(a);
+  v3f step = v3f(b - a);
+  float len = length(v2f(step));
+  if (len < 1e-6f) {
+    v2i p = v2i(round((a[0]) / c_HeightFieldStep), round((a[1]) / c_HeightFieldStep));
+    rasterizeDiskInHeightField(p, max(a[2],b[2]), r);
+    return;
+  }
+  step = step / len;
+  float l = 0.0f;
+  while (l < len) {
+    cur += step * c_HeightFieldStep;
+    v2i p = v2i(round((cur[0]) / c_HeightFieldStep), round((cur[1]) / c_HeightFieldStep));
+    rasterizeDiskInHeightField(p, cur[2], r);
+    l += c_HeightFieldStep;
+  }
+}
+
+float heightAt(const v3f& a, float r)
+{
+  float h = 0.0f;
+  int N = max(1,ceil(r / c_HeightFieldStep));
+  ForRange(nj, -N, N) {
+    ForRange(ni, -N, N) {
+      v2i p = v2i(round(a[0] / c_HeightFieldStep), round(a[1] / c_HeightFieldStep));
+      float v = g_HeightField.at<Clamp>(p[0], p[1]);
+      h = max(h, v);
+    }
+  }
+  return h;
 }
 
 // ----------------------------------------------------------------
@@ -322,36 +416,43 @@ void mainRender()
       g_ForceRedraw = false;
       LibSL::GPUHelpers::clearScreen(LIBSL_COLOR_BUFFER | LIBSL_DEPTH_BUFFER, 0.0f, 0.0f, 0.0f);
       // reset motion
-      motion_reset(g_FilamentDiameter);
-      g_PrevPos = v3f(0.0f);
+      printer_reset();
     }
 
     glEnable(GL_CULL_FACE);
-
-    const float time_step_ms = 1000;
 
     g_ShaderDeposition.begin();
     g_ShaderDeposition.u_projection.set(proj);
     g_ShaderDeposition.u_view.set(view);
     g_ShaderDeposition.u_ZNear.set(ZNear);
     g_ShaderDeposition.u_ZFar.set(ZFar);
-    ForIndex(i, 200) {
+    float step_ms = (float)g_TimeStep;
+    float layer_z = 0.0;
+    while (step_ms > 0.0f) {
       // step motion
       bool done;
-      float delta_ms = motion_step(time_step_ms, done);
+      float delta_ms = motion_step(step_ms, done);
+      g_GlobalTime += delta_ms;
+      if (done) break;
+      step_ms -= delta_ms;
       // pushed material volume during time interval
       float vf = motion_get_current_flow() * delta_ms; // recover pushed mm^3
-      float t = 0.3f; // TODO
-      v3f pos = v3f(motion_get_current_pos()) - v3f(g_BedSize[0] / 2.0f, g_BedSize[1] / 2.0f, 0.0f);
+      v3f pos  = v3f(motion_get_current_pos());
+      layer_z = max(layer_z, pos[2]);
+      float h = heightAt(pos, g_NozzleDiameter/2.0f);
+      float t = pos[2] - h;
+      // cerr << h << " " << t << endl;
+      t = max(t, 0.01f);
+      g_Trajectory.push_back(pos);
       float len = length(pos - g_PrevPos);
       if (vf > 0.0f) {
         // print move
-        g_ShaderDeposition.u_travel.set(false);
         float sec = vf / len;
         float r   = sqrt(sec / (float)M_PI); // sec = pi*r^2
-        float rs  = sphere_squashed_radius(r, t/2.0f);
+        float rs  = sphere_squashed_radius(r, min(t/2.0f,r/2.0f));
         g_ShaderDeposition.u_height.set(pos[2]);
         g_ShaderDeposition.u_thickness.set(t);
+        g_ShaderDeposition.u_radius.set(r);
         // add cylinder from previous
         g_ShaderDeposition.u_model.set(
           translationMatrix(v3f(0, 0, -rs/2.0f))
@@ -372,40 +473,42 @@ void mainRender()
           *scaleMatrix(v3f(rs))
         );
         g_GPUMesh_sphere->render();
-      } else {
-        // travel move
-        /*
-        g_ShaderDeposition.u_travel.set(true);
-        float rd = 0.5f;
-        g_ShaderDeposition.u_height.set(pos[2]);
-        g_ShaderDeposition.u_thickness.set(1e9f);
-        // add cylinder from previous
-        g_ShaderDeposition.u_model.set(
-          translationMatrix(v3f(0, 0, -0.5f / 2.0f))
-          *alignAlongSegment(v3f(g_PrevPos), v3f(pos))
-          *scaleMatrix(v3f(rd, rd, 1))
-        );
-        g_GPUMesh_cylinder->render();
-        // add spheres
-        g_ShaderDeposition.u_model.set(
-          translationMatrix(g_PrevPos)
-          *translationMatrix(v3f(0, 0, -rd / 2.0f))
-          *scaleMatrix(v3f(rd))
-        );
-        g_GPUMesh_sphere->render();
-        g_ShaderDeposition.u_model.set(
-          translationMatrix(pos)
-          *translationMatrix(v3f(0, 0, -rd / 2.0f))
-          *scaleMatrix(v3f(rd))
-        );
-        g_GPUMesh_sphere->render();
-        */
+        // update height field
+        // rasterizeInHeightField(g_PrevPos,pos, rs*1.5f);
+        t_height_segment seg;
+        seg.a = pos;
+        seg.b = g_PrevPos;
+        seg.time = pos[2]; // g_GlobalTime;
+        seg.radius = rs;
+        g_HeightSegments.push_back(seg);
       }
       g_PrevPos = pos;
     } // iter
     g_ShaderDeposition.end();
 
     g_RT->unbind();
+
+    // trajectory
+    while (g_Trajectory.size() > 256) {
+      g_Trajectory.erase(g_Trajectory.begin());
+    }
+    // erase one each time
+    if (!g_Trajectory.empty()) {
+      g_Trajectory.erase(g_Trajectory.begin());
+    }
+
+#if 1
+    // height segments (with delay)
+    auto S = g_HeightSegments.begin();
+    while (S != g_HeightSegments.end()) {
+      if (S->time < motion_get_current_pos()[2]) {
+        rasterizeInHeightField(S->a,S->b,S->radius);
+        S = g_HeightSegments.erase(S);
+      } else {
+        S++;
+      }
+    }
+#endif
 
     if (!redraw) {
       tm_lastChange = milliseconds();
@@ -423,11 +526,55 @@ void mainRender()
     g_ShaderFinal.u_texscl.set(v2f(g_RenderWidth / (float)g_RTWidth, g_RenderHeight / (float)g_RTHeight));
     g_ShaderFinal.u_ZNear.set(0.01f);
     g_ShaderFinal.u_ZFar.set(1000.0f);
-
     glActiveTexture(GL_TEXTURE0);
     glBindTexture(GL_TEXTURE_2D, g_RT->texture());
     g_GPUMesh_quad->render();
     g_ShaderFinal.end();
+
+    // render trajectory
+    if (!g_Trajectory.empty()) {
+      glEnable(GL_BLEND);
+      glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+      glDisable(GL_DEPTH_TEST);
+      g_ShaderSimple.begin();
+      g_ShaderSimple.u_projection.set(proj);
+      g_ShaderSimple.u_view.set(view);
+      g_ShaderSimple.u_color.set(v4f(0, 1, 0, 1));
+      v3f prev = g_Trajectory.front();
+      ForRange(t, 1, (int)g_Trajectory.size() - 1) {
+        g_ShaderSimple.u_alpha.set(t / (float)((int)g_Trajectory.size() - 1));
+        v3f pos = g_Trajectory[t];
+        // draw cylinder
+        g_ShaderSimple.u_view.set(
+          view
+          *alignAlongSegment(v3f(prev), v3f(pos))
+          *scaleMatrix(v3f(0.1f, 0.1f, 1))
+        );
+        g_GPUMesh_cylinder->render();
+        prev = pos;
+      }
+      g_ShaderSimple.end();
+      glEnable(GL_DEPTH_TEST);
+    }
+
+#if 0
+    g_ShaderSimple.begin();
+    g_ShaderSimple.u_projection.set(proj);
+    g_ShaderSimple.u_view.set(view);
+    g_ShaderSimple.u_color.set(v4f(0, 0, 1, 1));
+    g_ShaderSimple.u_alpha.set(1);
+    ForArray2D(g_HeightField, i, j) {
+      if (g_HeightField.at(i, j) > 0) {
+        g_ShaderSimple.u_view.set(
+          view
+          *translationMatrix(v3f((i+0.5f)*c_HeightFieldStep,(j+0.5f)*c_HeightFieldStep, g_HeightField.at(i, j)))
+          *scaleMatrix(v3f(0.2f))
+        );
+        g_GPUMesh_sphere->render();
+      }
+    }
+    g_ShaderSimple.end();
+#endif
 
     // render bed
     bed_render(proj,view,g_BedSize[0], g_BedSize[1]);
@@ -442,6 +589,8 @@ void mainRender()
       g_ShaderSimple.begin();
       g_ShaderSimple.u_projection.set(proj);
       g_ShaderSimple.u_view.set(translationMatrix(-view.mulPoint(v3f(0))) * view * scaleMatrix(v3f(4.0f)));
+      g_ShaderSimple.u_color.set(v4f(0));
+      g_ShaderSimple.u_alpha.set(1.0f);
       glDisable(GL_CULL_FACE);
       g_GPUMesh_axis->render();
       g_ShaderSimple.end();
@@ -595,14 +744,22 @@ int main(int argc, const char **argv)
   LibSL::GPUHelpers::clearScreen(LIBSL_COLOR_BUFFER | LIBSL_DEPTH_BUFFER, 0.0f, 0.0f, 0.0f);
   g_RT->unbind();
 
-  g_GPUMesh_sphere = AutoPtr<MeshRenderer<mvf_mesh> >( new MeshRenderer<mvf_mesh>(shape_sphere( 1.0f )) );
-  g_GPUMesh_cylinder = AutoPtr<MeshRenderer<mvf_mesh> >(new MeshRenderer<mvf_mesh>(shape_cylinder(1.0f, 1.0f, 1.0f)));
+  g_GPUMesh_sphere = AutoPtr<MeshRenderer<mvf_mesh> >( new MeshRenderer<mvf_mesh>(shape_sphere( 1.0f,32 )) );
+  g_GPUMesh_cylinder = AutoPtr<MeshRenderer<mvf_mesh> >(new MeshRenderer<mvf_mesh>(shape_cylinder(1.0f, 1.0f, 1.0f, 32)));
 
   /// default view
-  TrackballUI::trackball().set(v3f(0,0,-300.0f), v3f(0), quatf(v3f(1, 0, 0), -1.0f)*quatf(v3f(0, 0, 1), 0.0f));
+  TrackballUI::trackball().set(v3f(-g_BedSize[0]/2.0, -g_BedSize[1] / 2.0,-300.0f), v3f(0), quatf(v3f(1, 0, 0), -1.0f)*quatf(v3f(0, 0, 1), 0.0f));
+  TrackballUI::trackball().setCenter(v3f(g_BedSize[0] / 2.0, g_BedSize[1] / 2.0, 10.0f));
   TrackballUI::trackball().setBallSpeed(0.0f);
   TrackballUI::trackball().setAllowRoll(false);
   TrackballUI::trackball().setUp(Trackball::Z_neg);
+
+  // height field
+  int hszx = ceil(g_BedSize[0] / c_HeightFieldStep);
+  int hszy = ceil(g_BedSize[1] / c_HeightFieldStep);
+  cerr << "Allocated height field " << printByteSize(hszx*hszy*sizeof(float)) << endl;
+  g_HeightField.allocate(hszx,hszy);
+  g_HeightField.fill(0.0f);
 
   SimpleUI::initImGui();
 
@@ -616,7 +773,7 @@ int main(int argc, const char **argv)
     emscripten_run_script(command.c_str());
   }
 #else
-  std::string g_GCode_string = loadFileIntoString("G:\\ICESL\\ICESL_next\\icesl-next\\icesl-vrprint\\www\\icesl.gcode");
+  std::string g_GCode_string = loadFileIntoString("E:\\SLEFEBVR\\PROJECTS\\IceSL_next\\icesl-next\\icesl-vrprint\\www\\icesl.gcode");
   gcode_start(g_GCode_string.c_str());
 #endif
   motion_start( g_FilamentDiameter );

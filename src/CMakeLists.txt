@@ -51,3 +51,11 @@ target_link_libraries(icesl-vrprint
   luabind
   )
  
+
+if(EMSCRIPTEN)
+SET_TARGET_PROPERTIES(icesl-cpu-stl-slicer PROPERTIES DEBUG_POSTFIX "-d")
+set_target_properties(icesl-cpu-stl-slicer PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/../slicecrafter/")
+set_target_properties(icesl-cpu-stl-slicer PROPERTIES RUNTIME_OUTPUT_DIRECTORY_DEBUG "${CMAKE_CURRENT_SOURCE_DIR}/../slicecrafter/")
+set_target_properties(icesl-cpu-stl-slicer PROPERTIES RUNTIME_OUTPUT_DIRECTORY_RELEASE "${CMAKE_CURRENT_SOURCE_DIR}/../slicecrafter/")
+set_target_properties(icesl-cpu-stl-slicer PROPERTIES RUNTIME_OUTPUT_DIRECTORY_RELWITHDEBINFO "${CMAKE_CURRENT_SOURCE_DIR}/../slicecrafter/")
+endif(EMSCRIPTEN)

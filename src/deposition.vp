@@ -10,11 +10,14 @@ uniform float  u_thickness;
 uniform float  u_radius;
 
 varying vec3   v_pos;
+varying float  v_dangling;
 
 void main()
 {
   vec3 vertex = (u_model * mvf_vertex).xyz;
   vertex.z = clamp(vertex.z , u_height - u_thickness, u_height);
+
+  v_dangling = abs(u_radius - u_thickness);
 
   vec4 view_vertex = u_view * vec4(vertex, 1.0);
   vec4 proj_vertex = u_projection * view_vertex;

@@ -82,7 +82,7 @@ void bed_render(const m4x4f& proj,const m4x4f& view,float bed_w,float bed_h)
   glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
   g_ShaderBed.begin();
   g_bed_view.set(proj*view);
-  g_bed_mdl.set(trl*scaleMatrix(v3f(bed_w, bed_h, 1))*translationMatrix(v3f(-.5f, -.5f, 0.0f))*translationMatrix(v3f(0.0039f, 0.0039f, 0)));
+  g_bed_mdl.set(trl*scaleMatrix(v3f(bed_w, bed_h, 1))*translationMatrix(v3f(0.0f, 0.0f, 0.0f))*translationMatrix(v3f(0.0039f, 0.0039f, 0)));
   g_bed_tex_scale.set(v2f(bed_w, bed_h));
   g_bed_quad->render();
   g_ShaderBed.end();
