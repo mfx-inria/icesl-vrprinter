@@ -21,3 +21,6 @@ int gcode_line();
 
 // restart from scratch
 void gcode_reset();
+
+// returns true in a reading error occured
+bool gcode_error();

@@ -452,8 +452,13 @@ void mainRender()
       // step motion
       bool done;
       float delta_ms = motion_step(step_ms, done);
+      if (gcode_error()) {
+#ifdef EMSCRIPTEN
+        std::string command = "errorLine(" + to_string(gcode_line()) + ");";
+        emscripten_run_script(command.c_str());
+#endif
+      }
       g_GlobalTime += delta_ms;
-      if (done) break;
       step_ms -= delta_ms;
       // line highlighting
 #ifdef EMSCRIPTEN
@@ -523,6 +528,7 @@ void mainRender()
         }
       }
 #endif
+      if (done) break;
     } // iter
     g_ShaderDeposition.end();
 
@@ -803,7 +809,7 @@ int main(int argc, const char **argv)
     emscripten_run_script(command.c_str());
   }
 #else
-  std::string g_GCode_string = loadFileIntoString("E:\\SLEFEBVR\\PROJECTS\\IceSL_next\\icesl-next\\icesl-vrprint\\www\\icesl.gcode");
+  std::string g_GCode_string = loadFileIntoString("G:\\ICESL\\ICESL_next\\icesl-next\\icesl-vrprint\\www\\test.gcode");
   gcode_start(g_GCode_string.c_str());
 #endif
   motion_start( g_FilamentDiameter );

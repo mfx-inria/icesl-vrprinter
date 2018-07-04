@@ -17,6 +17,7 @@ v4f         g_Offset(0.0f);
 float       g_Speed = 20.0f;
 int         g_Line = 0;
 const char *g_GCode = NULL;
+bool        g_GCodeError = false;
 
 // --------------------------------------------------------------
 
@@ -29,6 +30,7 @@ void gcode_start(const char *gcode)
   g_Offset = 0.0f;
   g_Speed = 20.0f;
   g_Line = 0;
+  g_GCodeError = false;
 }
 
 // --------------------------------------------------------------
@@ -42,17 +44,20 @@ void gcode_reset()
   g_Offset = 0.0f;
   g_Speed = 20.0f;
   g_Line = 0;
+  g_GCodeError = false;
 }
 
 // --------------------------------------------------------------
 
 bool gcode_advance()
 {
+  if (g_GCodeError) return false;
   int c;
   while (!g_Parser->eof()) {
     g_Line ++;
     c = g_Parser->readChar();
-    if (c == 'G') {
+    c = tolower(c);
+    if (c == 'g') {
       int n = g_Parser->readInt();
       if (n == 0 || n == 1) { // G0 G1
         while (!g_Parser->eof()) {
@@ -70,6 +75,11 @@ bool gcode_advance()
             g_Pos[3] = f + g_Offset[3];
           } else if (c == 'f') {
             g_Speed = f / 60.0f;
+          } else if (c >= 'a' && c <= 'f') {
+            // TODO mixing ratios
+          } else {
+            g_GCodeError = true;
+            return false;
           }
         }
         break; // done advancing
@@ -89,16 +99,25 @@ bool gcode_advance()
         g_Parser->reachChar('\n');
       } else if (n == 11) { // G11
         g_Parser->reachChar('\n');
-      } else { // other
+      } else { // other => ignore
         g_Parser->reachChar('\n');
       }
-    } else if (c == 'M') {
+    } else if (c == 'm') {
       int n = g_Parser->readInt();
       g_Parser->reachChar('\n');
     } else if (c == '\n') {
       // do nothing
-    } else {
+    } else if (c == '<') {
       g_Parser->reachChar('\n');
+    } else if (c == ';') {
+      g_Parser->reachChar('\n');
+    } else if (c == '\r') {
+      g_Parser->reachChar('\n');
+    } else if (c == '\0' || c == -1) {
+      return false;
+    } else {
+      g_GCodeError = true;
+      return false;
     }
   }
   return !g_Parser->eof();
@@ -123,6 +142,13 @@ float gcode_speed()
 int gcode_line()
 {
   return g_Line;
+}
+
+// --------------------------------------------------------------
+
+bool gcode_error() 
+{
+  return g_GCodeError;
 }
 
 // --------------------------------------------------------------

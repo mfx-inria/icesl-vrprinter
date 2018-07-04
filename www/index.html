@@ -138,6 +138,14 @@ ul li {
     width: 100% !important;
     left: 0 !important;
 }
+
+.error
+{
+    background: rgba(255, 0, 0, 0.5);
+    position: absolute;
+    width: 100% !important;
+    left: 0 !important;
+}
 </style>
 </head>
 
@@ -231,9 +239,18 @@ ul li {
           editor.getSession().removeMarker(markerId);
         }
         markerId = editor.getSession().addMarker(new Range(line-1, 0, line-1, 100), "processing", "fullLine");
-        //console.log('highlightLine ' + line);
       }
       
+      function errorLine(line)
+      {
+        var editor = ace.edit("editor");
+        var Range = ace.require('ace/range').Range
+        if (markerId > -1) {
+          editor.getSession().removeMarker(markerId);
+        }
+        markerId = editor.getSession().addMarker(new Range(line-1, 0, line-1, 100), "error", "fullLine");
+      }
+
       function save()
       {
         var text = editor.getSession().getValue();
