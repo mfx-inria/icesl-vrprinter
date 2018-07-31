@@ -1,0 +1,395 @@
+﻿<!doctype html>
+<html lang="en-us">
+  <head>
+    <meta charset="utf-8">
+    <title>Virtual 3d printer</title>
+		<link rel="stylesheet" href="bootstrap.css">
+		<script src="bootstrap.js" charset="utf-8"></script>
+    <style>
+body {
+  font-family: arial;
+  margin: 0;
+  padding: none;
+  background-color: #0a0a0a;
+}
+
+/* the canvas *must not* have any border or padding, or mouse coords will be wrong */
+canvas.emscripten 
+{ 
+    border: 0px none; 
+    position: absolute;
+    margin: 0;
+    top: 165px;
+    bottom: 0;
+    left: 0px;
+    right: 0;
+}
+
+#editor { 
+	position: relative;
+	top: 165px;
+	left: 1050px;
+  height: 700px;
+	width: 800px;
+}
+
+#report_line {
+    position: absolute;
+    top:    120px;
+    left:   1054px;
+    color: white;
+    font-family: consolas, serif;
+    font-size: 20px;
+    font-style: normal;
+}
+
+#report_msg {
+    position: absolute;
+    top:    120px;
+    left:   1110px;
+    color: white;
+    font-family: consolas, serif;
+    font-size: 20px;
+    font-style: oblique;
+    color: #ff8080;
+    white-space: nowrap;
+}
+
+#icesl_link {
+    position: absolute;
+    top:    870px;
+    left:   175px;
+    color: white;
+    font-size: 20px;
+    white-space: nowrap;
+}
+
+#doc_link {
+    position: absolute;
+    top:    870px;
+    left:   1250px;
+    color: white;
+    font-size: 20px;
+    white-space: nowrap;
+}
+
+#warning {
+    position: relative;
+    top:    -60px;
+    height: 0px;
+    margin-top: -16px;
+}
+
+ul {
+    margin-top: 15px;
+    margin-bottom: 0px;
+    padding-top: 0px;
+    padding-bottom: 0px;
+}
+
+ul li {
+    margin-top: -15px;
+    margin-bottom: 0px;
+    padding-top: 0px;
+    padding-bottom: 0px;
+}
+
+#btn1 {
+    position: absolute;
+    top:    920px;
+    left:   130px;
+    white-space: nowrap;
+}
+
+#btn2 {
+    position: absolute;
+    top:    920px;
+    left:   220px;
+    white-space: nowrap;
+}
+
+#btn3 {
+    position: absolute;
+    top:    920px;
+    left:   320px;
+    white-space: nowrap;
+}
+
+#btn4 {
+    position: absolute;
+    top:    920px;
+    left:   430px;
+    white-space: nowrap;
+}
+
+#examples {
+    position: absolute;
+    top:    905px;
+    left:   16px;
+    font-size: 16px;
+    color: #ffffff;
+    white-space: nowrap;
+}
+
+.processing
+{
+    background: rgba(128, 196, 0, 0.5);
+    position: absolute;
+    width: 100% !important;
+    left: 0 !important;
+}
+
+.error
+{
+    background: rgba(255, 0, 0, 0.5);
+    position: absolute;
+    width: 100% !important;
+    left: 0 !important;
+}
+</style>
+</head>
+
+<body>
+
+    <div id="editor" tabindex="1"></div>
+    
+	<p style="width: 1024px; position: absolute; top: 990px; ">
+    </p>
+	
+    <script src="./ace-min/ace.js" type="text/javascript" charset="utf-8"></script>
+
+    <script async type="text/javascript" src="files.js"></script>
+
+    <canvas class="emscripten" id="canvas" tabindex="2" oncontextmenu="event.preventDefault()"></canvas>
+
+    <h2 id="report_line"></h2> 
+    
+    <h2 id="report_msg"></h2> 
+    
+   <script>
+   function parseCommandLine()
+   {
+      /// get 'command line' parameters      
+      // http://stackoverflow.com/questions/979975/how-to-get-the-value-from-the-get-parameters
+      var QueryString = function () {
+      var query_string = {};
+      var query = window.location.search.substring(1);
+      var vars = query.split("&");
+      for (var i=0;i<vars.length;i++) {
+        var pair = vars[i].split("=");
+            // If first entry with this name
+        if (typeof query_string[pair[0]] === "undefined") {
+          query_string[pair[0]] = decodeURIComponent(pair[1]);
+            // If second entry with this name
+        } else if (typeof query_string[pair[0]] === "string") {
+          var arr = [ query_string[pair[0]],decodeURIComponent(pair[1]) ];
+          query_string[pair[0]] = arr;
+            // If third or later entry with this name
+        } else {
+          query_string[pair[0]].push(decodeURIComponent(pair[1]));
+        }
+      } 
+      return query_string;
+      }();
+      
+      /// Download file if given
+      if (typeof QueryString.url !== 'undefined') {
+        // download file
+        var xhr = new XMLHttpRequest();
+        xhr.open("GET", QueryString.url);
+        xhr.responseType = "arraybuffer";
+        xhr.overrideMimeType("application/octet-stream");
+        Module.beginDownload();
+        xhr.onprogress = function(evt) {
+          if (evt.lengthComputable) {
+            var percent = evt.loaded / evt.total;
+            Module.setDownloadProgress(percent);
+          }         
+        };
+        xhr.onload = function () {
+          if (this.status === 200) {
+            FS.writeFile('/print.gcode', new Uint8Array(xhr.response), { encoding: "binary" });
+            Module.endDownload();
+          }
+        };
+        xhr.send();
+      }
+   }
+   </script>
+
+    <script type='text/javascript'>
+      var editor = ace.edit("editor");
+      editor.setTheme("ace/theme/monokai");
+      editor.getSession().setMode("ace/mode/gcode");
+      editor.setFontSize(16);
+
+      var markerId = -1;
+      
+      function reportError(line,msg)
+      {
+        document.getElementById("report_line").innerHTML = '[' + line + ']';
+        document.getElementById("report_msg").innerHTML = msg;
+      }
+      
+      function highlightLine(line)
+      {
+        var editor = ace.edit("editor");
+        var Range = ace.require('ace/range').Range
+        if (markerId > -1) {
+          editor.getSession().removeMarker(markerId);
+        }
+        markerId = editor.getSession().addMarker(new Range(line-1, 0, line-1, 100), "processing", "fullLine");
+      }
+      
+      function errorLine(line)
+      {
+        var editor = ace.edit("editor");
+        var Range = ace.require('ace/range').Range
+        if (markerId > -1) {
+          editor.getSession().removeMarker(markerId);
+        }
+        markerId = editor.getSession().addMarker(new Range(line-1, 0, line-1, 100), "error", "fullLine");
+      }
+
+      function save()
+      {
+        var text = editor.getSession().getValue();
+        document.getElementById("report_line").innerHTML = '';
+        document.getElementById("report_msg").innerHTML = '';
+        FS.writeFile('/print.gcode', text);
+      }        
+
+      function setupEditor()
+      {
+        var code = FS.readFile('icesl.gcode', { encoding: 'utf8' });
+        editor.setValue(code);
+        editor.clearSelection();
+        editor.getSession().on('change', function() 
+        {
+          if (typeof(tmExec) !== 'undefined') {
+            clearTimeout(tmExec);
+            console.log('restarting');
+          }
+          tmExec = setTimeout(save,1000);
+        });         
+      }
+      
+      var Module = {
+        preRun: [],
+        postRun: [],
+        print: (function() {
+          return function(text) {
+            if (arguments.length > 1) text = Array.prototype.slice.call(arguments).join(' ');
+            console.log(text);
+          };
+        })(),
+        printErr: function(text) {
+          if (arguments.length > 1) text = Array.prototype.slice.call(arguments).join(' ');
+          console.error(text);
+        },
+        canvas: (function() {
+          var canvas = document.getElementById('canvas');
+
+          // As a default initial behavior, pop up an alert when webgl context is lost. To make your
+          // application robust, you may want to override this behavior before shipping!
+          // See http://www.khronos.org/registry/webgl/specs/latest/1.0/#5.15.2
+          canvas.addEventListener("webglcontextlost", function(e) { alert('WebGL context lost. You will need to reload the page.'); e.preventDefault(); }, false);
+
+          return canvas;
+        })(),
+        setStatus: function(text) {
+          if (!Module.setStatus.last) Module.setStatus.last = { time: Date.now(), text: '' };
+          if (text === Module.setStatus.text) return;
+          var m = text.match(/([^(]+)\((\d+(\.\d+)?)\/(\d+)\)/);
+          var now = Date.now();
+          if (m && now - Date.now() < 30) return; // if this is a progress update, skip it if too soon
+          if (m) {
+            text = m[1];
+          } else {
+          }
+        },
+        totalDependencies: 0,
+        monitorRunDependencies: function(left) {
+          this.totalDependencies = Math.max(this.totalDependencies, left);
+          Module.setStatus(left ? 'Preparing... (' + (this.totalDependencies-left) + '/' + this.totalDependencies + ')' : 'All downloads complete.');
+        }
+      };
+      Module.setStatus('Downloading...');
+      window.onerror = function(event) {
+        // TODO: do not warn on ok events like simulating an infinite loop or exitStatus
+        Module.setStatus('Exception thrown, see JavaScript console');
+        Module.setStatus = function(text) {
+          if (text) Module.printErr('[post-exception status] ' + text);
+        };
+      };
+    </script>
+
+    <script src="Blob.js"> </script>
+    <script src="FileSaver.js"> </script>
+
+    <script>
+      function saveFileFromMemoryFSToDisk(name) {
+         var data=FS.readFile(name);
+         var blob;
+         var isSafari = /^((?!chrome|android).)*safari/i.test(navigator.userAgent);
+         if(isSafari) {
+            blob = new Blob([data.buffer], {type: "application/octet-stream"});
+         } else {
+            blob = new Blob([data.buffer], {type: "application/octet-binary"});
+         }
+         saveAs(blob, name);
+      }
+    </script>
+   
+    <script async type="text/javascript" src="icesl-vrprint.js"></script>
+    
+  
+<center>
+<div class="hero-unit" style="background-color: #404040;  color: #ffffff; width: 1790px; height: 60px; margin: 10px; margin-left: 0px; margin-right: 0px; text-shadow: 0px 1px #0f0f0f; text-align: left; position: absolute; top: 0px;">
+<h1 style="position: relative; top:-25px;">Virtual 3D printer</h1>
+<p style="position: relative; top:-25px;">Preview and test GCode</p>
+<p id="warning"><span style="color:#ff8080; font-size:15px;">Works best with Firefox or Chrome</span></p>
+<script>
+if( window.navigator.userAgent.indexOf("Edge") < 0 && ( window.navigator.userAgent.indexOf("Firefox") > -1 || window.navigator.userAgent.indexOf("Chrome") > -1 ) )
+	document.getElementById("warning").style.visibility = "hidden";
+ </script>
+</div>
+</center>
+
+<center>
+<div class="hero-unit" style="background-color: #404040; color: #fffff8; width: 1790px ; margin: 10px; margin-left: 0px; margin-right: 0px; text-align: left ; font-size: 14px ; padding-top: 8px ; padding-bottom: 8px ; line-height: 16px;
+position: absolute; top: 965px">
+
+Virtual 3d printer is powered by the amazing <a href="https://github.com/kripken/emscripten">Emscripten</a> and <a href="https://github.com/ocornut/imgui">ImGui</a> libraries. The website uses <a href="https://github.com/eligrey/FileSaver.js/">Blob.js, Filesaver.js</a> as well as bootstrap.js. Many thanks to the authors and contributors of these libraries.
+</div>
+</center>
+
+<center>
+<div class="hero-unit" style="background-color: #404040;  color: #fffff8; width: 1790px ; margin: 10px; margin-left: 0px; margin-right: 0px; text-align: left ; font-size: 10px ; padding-top: 8px ; padding-bottom: 8px ; line-height: 12px; 
+position: absolute; top: 1005px">
+	<p>(c) Sylvain Lefebvre / Inria 2018, all rights reserved.</p>
+<p>Access to this software is provided for free for educational and research purposes, 
+as well as for individual non-profit, non-commercial use.
+<a href="sylvain.lefebvre@inria.fr">Contact us</a> for any other use.</p>
+<p>The root url for this script is <i>http://shapeforge.loria.fr/icesl-vrprint</i>. 
+This web page and all associated javascript codes should NOT be copied, redistributed, reverse engineered,
+or included by pages or scripts located at an external URL.
+You are welcome to redirect users directly to this website.</p>
+<p>Your mesh data never leaves your computer.</p>
+<p>
+THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+IMPLIED WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE
+AND NONINFRINGEMENT ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE
+LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
+CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
+SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+POSSIBILITY OF SUCH DAMAGE.</p>
+</div>
+</center>
+
+  </body>
+</html>
