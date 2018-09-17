@@ -1,4 +1,3 @@
-<<<<<<< HEAD
 CMAKE_MINIMUM_REQUIRED(VERSION 2.6)
 Project(icesl-vrprint)
 
@@ -17,23 +16,3 @@ set_target_properties(icesl-vrprint PROPERTIES RUNTIME_OUTPUT_DIRECTORY_DEBUG "$
 set_target_properties(icesl-vrprint PROPERTIES RUNTIME_OUTPUT_DIRECTORY_RELEASE "${CMAKE_CURRENT_SOURCE_DIR}/../bin")
 set_target_properties(icesl-vrprint PROPERTIES RUNTIME_OUTPUT_DIRECTORY_RELWITHDEBINFO "${CMAKE_CURRENT_SOURCE_DIR}/../bin")
 endif(EMSCRIPTEN)
-=======
-CMAKE_MINIMUM_REQUIRED(VERSION 2.6)
-Project(icesl-vrprint)
-
-add_subdirectory(src)
-
-if(EMSCRIPTEN)
-SET_TARGET_PROPERTIES(icesl-vrprint PROPERTIES DEBUG_POSTFIX "-d")
-set_target_properties(icesl-vrprint PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/www/")
-set_target_properties(icesl-vrprint PROPERTIES RUNTIME_OUTPUT_DIRECTORY_DEBUG "${CMAKE_CURRENT_SOURCE_DIR}/www/")
-set_target_properties(icesl-vrprint PROPERTIES RUNTIME_OUTPUT_DIRECTORY_RELEASE "${CMAKE_CURRENT_SOURCE_DIR}/www/")
-set_target_properties(icesl-vrprint PROPERTIES RUNTIME_OUTPUT_DIRECTORY_RELWITHDEBINFO "${CMAKE_CURRENT_SOURCE_DIR}/www/")
-else(EMSCRIPTEN)
-SET_TARGET_PROPERTIES(icesl-vrprint PROPERTIES DEBUG_POSTFIX "-d")
-set_target_properties(icesl-vrprint PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/../bin")
-set_target_properties(icesl-vrprint PROPERTIES RUNTIME_OUTPUT_DIRECTORY_DEBUG "${CMAKE_CURRENT_SOURCE_DIR}/../bin")
-set_target_properties(icesl-vrprint PROPERTIES RUNTIME_OUTPUT_DIRECTORY_RELEASE "${CMAKE_CURRENT_SOURCE_DIR}/../bin")
-set_target_properties(icesl-vrprint PROPERTIES RUNTIME_OUTPUT_DIRECTORY_RELWITHDEBINFO "${CMAKE_CURRENT_SOURCE_DIR}/../bin")
-endif(EMSCRIPTEN)
->>>>>>> cz-refactor
