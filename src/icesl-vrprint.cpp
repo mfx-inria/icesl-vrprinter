@@ -280,7 +280,7 @@ void ImGuiPanel()
     ImGui::SetNextWindowSize(ImVec2(600, 50));
     ImGui::SetNextWindowPosCenter();
     ImGui::Begin("Unsupported");
-    ImGui::Text(g_FatalErrorMessage.c_str());
+    ImGui::Text("%s", g_FatalErrorMessage.c_str());
     ImGui::End();
 
   }
