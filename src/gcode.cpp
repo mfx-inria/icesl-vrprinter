@@ -75,7 +75,7 @@ bool gcode_advance()
             g_Pos[3] = f + g_Offset[3];
           } else if (c == 'f') {
             g_Speed = f / 60.0f;
-          } else if (c >= 'a' && c <= 'f') {
+          } else if (c >= 'a' && c <= 'h') {
             // TODO mixing ratios
           } else {
             g_GCodeError = true;
