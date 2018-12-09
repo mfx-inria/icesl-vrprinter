@@ -31,7 +31,11 @@ void main()
   if (u_color_overhangs == 1) {
     gl_FragColor = vec4(nrm.zzz * vec3(1.0, 1.0-tex.z, 1.0-tex.z),1.0);
   } else {
-    gl_FragColor = vec4(nrm.zzz,1.0);
+    if (tex.w < 0.5) {
+      gl_FragColor = vec4(nrm.z * vec3(1.0,1.0,1.0), 1.0);
+    } else {
+      gl_FragColor = vec4(nrm.z * vec3(0.5, 0.5, 1.0), 1.0);
+    }
   }
   // gl_FragColor = tex;
 }

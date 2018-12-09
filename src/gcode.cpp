@@ -15,6 +15,7 @@ t_parser_ptr g_Parser;
 v4f         g_Pos(0.0f);
 v4f         g_Offset(0.0f);
 float       g_Speed = 20.0f;
+int         g_Extruder = 0;
 int         g_Line = 0;
 const char *g_GCode = NULL;
 bool        g_GCodeError = false;
@@ -29,6 +30,7 @@ void gcode_start(const char *gcode)
   g_Pos = 0.0f;
   g_Offset = 0.0f;
   g_Speed = 20.0f;
+  g_Extruder = 0;
   g_Line = 0;
   g_GCodeError = false;
 }
@@ -43,6 +45,7 @@ void gcode_reset()
   g_Pos = 0.0f;
   g_Offset = 0.0f;
   g_Speed = 20.0f;
+  g_Extruder = 0;
   g_Line = 0;
   g_GCodeError = false;
 }
@@ -105,6 +108,10 @@ bool gcode_advance()
     } else if (c == 'm') {
       int n = g_Parser->readInt();
       g_Parser->reachChar('\n');
+    } else if (c == 't') {
+      int e = g_Parser->readInt();
+      g_Extruder = e;
+      g_Parser->reachChar('\n');
     } else if (c == '\n') {
       // do nothing
     } else if (c == '<') {
@@ -135,6 +142,13 @@ v4f gcode_next_pos()
 float gcode_speed()
 {
   return g_Speed;
+}
+
+// --------------------------------------------------------------
+
+int gcode_extruder()
+{
+  return g_Extruder;
 }
 
 // --------------------------------------------------------------

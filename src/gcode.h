@@ -16,6 +16,9 @@ v4f  gcode_next_pos();
 // returns the speed in mm/sec
 float gcode_speed();
 
+// returns the current extruder
+int gcode_extruder();
+
 // return current line in gcode stream
 int gcode_line();
 

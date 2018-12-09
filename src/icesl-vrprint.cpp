@@ -487,6 +487,7 @@ void mainRender()
         g_ShaderDeposition.u_height.set(pos[2]);
         g_ShaderDeposition.u_thickness.set(t);
         g_ShaderDeposition.u_radius.set(r);
+        g_ShaderDeposition.u_extruder.set( 0.25f + 0.75f * gcode_extruder());
         // add cylinder from previous
         g_ShaderDeposition.u_model.set(
           translationMatrix(v3f(0, 0, -squash_t))
@@ -809,7 +810,7 @@ int main(int argc, const char **argv)
     emscripten_run_script(command.c_str());
   }
 #else
-  std::string g_GCode_string = loadFileIntoString("G:\\ICESL\\ICESL_next\\icesl-next\\icesl-vrprint\\www\\test.gcode");
+  std::string g_GCode_string = loadFileIntoString("D:\\NO_BACKUP\\Downloads\\Dice_with_coloured_dots_Dice_body.gcode");
   gcode_start(g_GCode_string.c_str());
 #endif
   motion_start( g_FilamentDiameter );
