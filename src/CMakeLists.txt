@@ -49,5 +49,6 @@ target_link_libraries(icesl-vrprint
   LibSL_gl
   lua
   luabind
+  libcore
   )
  
