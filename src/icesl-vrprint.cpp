@@ -810,7 +810,7 @@ int main(int argc, const char **argv)
     emscripten_run_script(command.c_str());
   }
 #else
-  std::string g_GCode_string = loadFileIntoString("D:\\NO_BACKUP\\Downloads\\Dice_with_coloured_dots_Dice_body.gcode");
+  std::string g_GCode_string = loadFileIntoString("G:\\ICESL\\MODELS\\frogs\\Frog_Cubimal_-_v1.2.STL.gcode");
   gcode_start(g_GCode_string.c_str());
 #endif
   motion_start( g_FilamentDiameter );
