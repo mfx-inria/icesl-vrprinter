@@ -123,6 +123,7 @@ bool gcode_advance()
     } else if (c == '\0' || c == -1) {
       return false;
     } else {
+      std::cerr << "Error parsing GCode line " << g_Line << std::endl;
       g_GCodeError = true;
       return false;
     }
