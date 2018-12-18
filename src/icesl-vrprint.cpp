@@ -472,9 +472,14 @@ void mainRender()
       // pushed material volume during time interval
       float vf = motion_get_current_flow() * delta_ms; // recover pushed mm^3
       v3f pos  = v3f(motion_get_current_pos());
-      float h  = heightAt(pos, g_NozzleDiameter / 2.0f);
+      float h  = heightAt(pos, g_NozzleDiameter);
+
+      static float t_prev = 0.0f;
       float t  = pos[2] - h;
-      // t = max(t, 0.01f);
+      if (t < 1e-6f) t = t_prev;
+      else t_prev = t;
+      // std::cerr << t << ' ';
+
       g_Trajectory.push_back(pos);
       float len = length(pos - g_PrevPos);
       if (vf > 0.0f) {
@@ -512,7 +517,7 @@ void mainRender()
         t_height_segment seg;
         seg.a = pos;
         seg.b = g_PrevPos;
-        seg.time = max(pos[2], g_PrevPos[2]); // g_GlobalTime;
+        seg.time = g_GlobalTime;
         seg.radius = rs;
         g_HeightSegments.push_back(seg);
       }
@@ -521,7 +526,7 @@ void mainRender()
       // height segments (with delay)
       auto S = g_HeightSegments.begin();
       while (S != g_HeightSegments.end()) {
-        if (S->time < pos[2]) {
+        if (S->time < g_GlobalTime - g_TimeStep * 4) {
           rasterizeInHeightField(S->a, S->b, S->radius);
           S = g_HeightSegments.erase(S);
         } else {
@@ -810,7 +815,8 @@ int main(int argc, const char **argv)
     emscripten_run_script(command.c_str());
   }
 #else
-  std::string g_GCode_string = loadFileIntoString("D:\\NO_BACKUP\\Downloads\\Dice_with_coloured_dots_Dice_body.gcode");
+  std::string g_GCode_string = loadFileIntoString("E:\\SLEFEBVR\\PROJECTS\\ALL\\curvislice\\models\\kitten__mid2.000000kitten__mid2.000000.gcode");
+  // std::string g_GCode_string = loadFileIntoString("E:\\SLEFEBVR\\PROJECTS\\MODELS\\knot.stl.gcode");
   gcode_start(g_GCode_string.c_str());
 #endif
   motion_start( g_FilamentDiameter );
