@@ -11,7 +11,7 @@ uniform float  u_ZFar;
 
 uniform int    u_color_overhangs;
 
-uniform int    u_extruder;
+//uniform int    u_extruder;
 
 float decode_float(vec4 v) { return (v.x*256.0 + v.y*255.0*256.0) / 65536.0; }
 
@@ -32,7 +32,10 @@ void main()
 
   if (u_color_overhangs == 1) {
     gl_FragColor = vec4(nrm.zzz * vec3(1.0, 1.0-tex.z, 1.0-tex.z),1.0);
-  } else if (u_extruder == 0){
+  } 
+
+  /*
+	else if (u_extruder == 0){
 	gl_FragColor = vec4(nrm.zzz * vec3(1.0, 1.0-tex.z, 1.0-tex.z),1.0);
   } else if (u_extruder == 1){
 	gl_FragColor = vec4(nrm.zzz * vec3(1.0-tex.z, 1.0, 1.0-tex.z),1.0);
@@ -42,7 +45,10 @@ void main()
 	gl_FragColor = vec4(nrm.zzz * vec3(1.0, 1.0, 1.0),1.0);
   } else if (u_extruder == 4){
 	gl_FragColor = vec4(nrm.zzz * vec3(1.0-tex.z, 1.0-tex.z, 1.0-tex.z),1.0);
-  }else {
+  }
+  */
+
+  else {
     if (tex.w < 0.5) {
       gl_FragColor = vec4(nrm.z * vec3(1.0,1.0,1.0), 1.0);
     } else {
