@@ -419,7 +419,10 @@ void mainRender()
     TrackballUI::trackball().setRadius(ex / (g_Zoom*g_Zoom));
 
     // view matrix
-    m4x4f view = scaleMatrix(v3f(g_Zoom)) * TrackballUI::matrix() * translationMatrix(-bx.center());
+    m4x4f view =          
+        translationMatrix(v3f(0, 0, g_Zoom))
+      * TrackballUI::matrix()
+      * translationMatrix(-bx.center());
 
     // should we redraw?
     bool redraw = true;
@@ -664,8 +667,8 @@ void mainRender()
 
 void mainKeyboard(unsigned char key)
 {
-  if (key == 'e')      g_ZoomTarget = g_ZoomTarget*1.01f;
-  else if (key == 'r') g_ZoomTarget = g_ZoomTarget / 1.01f;
+  if (key == 'e')      g_ZoomTarget = g_ZoomTarget*1.1f;
+  else if (key == 'r') g_ZoomTarget = g_ZoomTarget / 1.1f;
 }
 
 // ----------------------------------------------------------------
@@ -810,7 +813,9 @@ int main(int argc, const char **argv)
     emscripten_run_script(command.c_str());
   }
 #else
-  std::string g_GCode_string = loadFileIntoString("E:\\SLEFEBVR\\PROJECTS\\ALL\\curvislice\\models\\kitten__mid2.000000kitten__mid2.000000.gcode");
+  std::string g_GCode_string = loadFileIntoString(
+    "C:\\Users\\slefebvr\\AppData\\Roaming\\IceSL\\3DBenchy.stl.gcode"
+  );
   gcode_start(g_GCode_string.c_str());
 #endif
   motion_start( g_FilamentDiameter );
