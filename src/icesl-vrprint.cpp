@@ -33,10 +33,10 @@ using namespace std;
 
 int           g_UIWidth = 350;
 
-int           g_ScreenWidth = 700;
-int           g_ScreenHeight = 700;
-int           g_RenderWidth = 700;
-int           g_RenderHeight = 700;
+int           g_ScreenWidth = 1024;
+int           g_ScreenHeight = 1024;
+int           g_RenderWidth = 1024;
+int           g_RenderHeight = 1024;
 
 int           g_RTWidth  = 1024;
 int           g_RTHeight = 1024;
@@ -217,10 +217,36 @@ void ImGuiPanel()
       ImGui::ProgressBar(g_DownloadProgress);
       ImGui::End();
     }
+
+    // main imgui window
     ImGui::SetNextWindowPos(ImVec2(0, 0), ImGuiSetCond_Once);
     ImGui::SetNextWindowSize(ImVec2(g_UIWidth, 750), ImGuiSetCond_Once);
-    ImGui::Begin("Virtual 3D printer");
+
+    ImGuiWindowFlags window_flags = 0;
+    window_flags |= ImGuiWindowFlags_NoMove;
+    window_flags |= ImGuiWindowFlags_NoResize;
+    window_flags |= ImGuiWindowFlags_NoCollapse;
+
+    ImGui::Begin("Virtual 3D printer", false, window_flags); // PB: initialize the main imgui window, with flags to disable closing it and other features
     ImGui::PushItemWidth(200);
+
+    // gcode load and informations
+    ImGui::SetNextTreeNodeOpen(true);
+    if (ImGui::CollapsingHeader("Gcode")) {
+      static bool gcode_loaded = false;
+      if (ImGui::Button("Load a Gcode")) {
+        // TODO call file opening
+        //std::string g_GCode_string = loadFileIntoString(openFileDialog(OFD_FILTER_GCODE).c_str());
+        //gcode_start(g_GCode_string.c_str());
+        // TODO call rest / restart simulation
+        //printer_reset();
+        gcode_loaded = true;
+      }
+      if (gcode_loaded) {
+        ImGui::SameLine();
+        ImGui::Text("Gcode_file_name"); // TODO get selected file name
+      }
+    }
 
     // printer setup
     ImGui::SetNextTreeNodeOpen(true);
@@ -229,26 +255,41 @@ void ImGuiPanel()
       g_FilamentDiameter = clamp(g_FilamentDiameter, 0.1f, 10.0f);
       static float nozzleDiameter = g_NozzleDiameter;
       ImGui::InputFloat("Nozzle diameter", &nozzleDiameter, 0.0f, 0.0f, 3);
-      g_NozzleDiameter = clamp(nozzleDiameter, c_HeightFieldStep*2.0f, 10.0f);      
-      ImGui::InputInt("Start at GCode line", &g_StartAtLine);
+      g_NozzleDiameter = clamp(nozzleDiameter, c_HeightFieldStep*2.0f, 10.0f);
+    }
+
+    // simulation control
+    ImGui::SetNextTreeNodeOpen(true);
+    if (ImGui::CollapsingHeader("Simulation Control")) {
+      if (ImGui::Button("Play")) {
+        // TODO simulation play
+      }
+      ImGui::SameLine();
+      if (ImGui::Button("Pause")) {
+        // TODO simulation pause
+      }
+      ImGui::SameLine();
+      if (ImGui::Button("Stop")) {
+        // TODO simulation stop
+      }
+      ImGui::SameLine();
       if (ImGui::Button("Reset")) {
-        g_NozzleDiameter = nozzleDiameter;
+        // TODO change archi to be able to get these variables from "anywhere"
+        //g_NozzleDiameter = nozzleDiameter;
         printer_reset();
         g_ForceRedraw = true;
       }
-    }
-    // control
-    ImGui::SetNextTreeNodeOpen(true);
-    if (ImGui::CollapsingHeader("Control")) {
-      ImGui::SliderFloat("Time step (msec)", &g_TimeStep, 0.1f, 3000.0f,"%.1f",3.0f);
+      ImGui::InputInt("Start at GCode line", &g_StartAtLine);
+      ImGui::SliderFloat("Time step (msec)", &g_TimeStep, 0.1f, 6000.0f,"%.1f",3.0f);
       ImGui::Checkbox("Color overhangs", &g_ColorOverhangs);
     }
-    // status
+
+    // simulation status
     ImGui::SetNextTreeNodeOpen(true);
-    if (ImGui::CollapsingHeader("Status")) {
+    if (ImGui::CollapsingHeader("Simulation Status")) {
       int line = gcode_line();
-      ImGui::InputInt("GCode line", &line);
-      ImGui::InputFloat3("XYZ (mm)", &motion_get_current_pos()[0]);
+      ImGui::InputInt("Current GCode line", &line, false);
+      ImGui::InputFloat3("XYZ Position (mm)", &motion_get_current_pos()[0]);
       // flow graph
       float flow = motion_get_current_flow() * 1000.0f;
       g_FlowsSample += flow;
@@ -733,7 +774,7 @@ int main(int argc, const char **argv)
   TrackballUI::onKeyPressed = mainKeyboard;
   TrackballUI::onMouseButtonPressed = mainMouseButton;
 
-  TrackballUI::init(g_UIWidth+g_ScreenWidth, g_ScreenHeight);
+  TrackballUI::init(g_ScreenWidth + g_UIWidth, g_ScreenHeight);
 
   // GL init
   glEnable(GL_DEPTH_TEST);
