@@ -6,17 +6,16 @@
 #endif
 
 #ifndef EMSCRIPTEN
-#ifdef _MSC_VER
-#define glActiveTexture glActiveTextureARB
-#endif
+  #include "FileDialog.h"
+  #ifdef _MSC_VER
+    #define glActiveTexture glActiveTextureARB
+  #endif
 #endif
 
 #include <LibSL.h>
 #include <LibSL_gl.h>
 
 LIBSL_WIN32_FIX;
-
-#include "FileDialog.h"
 
 // ----------------------------------------------------------------
 
@@ -42,7 +41,7 @@ int           g_RenderHeight = 700;
 int           g_RTWidth  = 1024;
 int           g_RTHeight = 1024;
 
-v2f           g_BedSize(200.0f, 150.0f);
+v2f           g_BedSize(200.0f, 200.0f);
 float         g_FilamentDiameter = 1.75f;
 float         g_NozzleDiameter = 0.4f;
 
