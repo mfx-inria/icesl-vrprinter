@@ -148,6 +148,21 @@ void addBar(AutoPtr<T_Mesh> gpumesh, v3f a, v3f b, pair<v3f, v3f> uv, float sz =
 
 // ----------------------------------------------------------------
 
+string load_gcode() {
+  std::string gcode_string = "";
+#ifdef EMSCRIPTEN
+  emscripten_run_script("parseCommandLine();\n");
+  if (!g_Downloading) {
+    gcode_string = loadFileIntoString("./icesl.gcode");
+  }
+#else
+  gcode_string = loadFileIntoString(openFileDialog(OFD_FILTER_GCODE).c_str());
+#endif
+  return gcode_string;
+}
+
+// ----------------------------------------------------------------
+
 void printer_reset()
 {
   gcode_reset();
@@ -235,17 +250,20 @@ void ImGuiPanel()
     if (ImGui::CollapsingHeader("Gcode")) {
       static bool gcode_loaded = false;
       if (ImGui::Button("Load a Gcode")) {
-        // TODO call file opening
-        //std::string g_GCode_string = loadFileIntoString(openFileDialog(OFD_FILTER_GCODE).c_str());
-        //gcode_start(g_GCode_string.c_str());
-        // TODO call rest / restart simulation
-        //printer_reset();
+        g_GCode_string = load_gcode();
+        gcode_start(g_GCode_string.c_str());        
+        motion_start(g_FilamentDiameter); 
+        printer_reset();
+        g_ForceRedraw = true;
         gcode_loaded = true;
       }
+      // TODO get selected file name
+      /*
       if (gcode_loaded) {
         ImGui::SameLine();
-        ImGui::Text("Gcode_file_name"); // TODO get selected file name
+        ImGui::Text("Gcode_file_name"); 
       }
+      */
     }
 
     // printer setup
@@ -826,7 +844,7 @@ int main(int argc, const char **argv)
   g_GPUMesh_sphere = AutoPtr<MeshRenderer<mvf_mesh> >( new MeshRenderer<mvf_mesh>(shape_sphere( 1.0f,32 )) );
   g_GPUMesh_cylinder = AutoPtr<MeshRenderer<mvf_mesh> >(new MeshRenderer<mvf_mesh>(shape_cylinder(1.0f, 1.0f, 1.0f, 32)));
 
-  /// default view
+  // default view
   TrackballUI::trackball().set(v3f(-g_BedSize[0]/2.0, -g_BedSize[1] / 2.0,-300.0f), v3f(0), quatf(v3f(1, 0, 0), -1.0f)*quatf(v3f(0, 0, 1), 0.0f));
   TrackballUI::trackball().setCenter(v3f(g_BedSize[0] / 2.0, g_BedSize[1] / 2.0, 10.0f));
   TrackballUI::trackball().setBallSpeed(0.0f);
@@ -842,7 +860,8 @@ int main(int argc, const char **argv)
 
   SimpleUI::initImGui();
 
-  /// load gcode
+  // load gcode
+#if 0 ///PB: Old gcode loading routine, now in load_gcode() method
 #ifdef EMSCRIPTEN
   emscripten_run_script("parseCommandLine();\n");
   if (!g_Downloading) {
@@ -855,11 +874,22 @@ int main(int argc, const char **argv)
   std::string g_GCode_string = loadFileIntoString(openFileDialog(OFD_FILTER_GCODE).c_str());
   gcode_start(g_GCode_string.c_str());
 #endif
+#endif
+
+  g_GCode_string = load_gcode();
+  gcode_start(g_GCode_string.c_str());
+
+  // load gcode in editor window for web-view
+#ifdef EMSCRIPTEN
+  std::string command = "setupEditor();";
+  emscripten_run_script(command.c_str());
+#endif
+
   motion_start( g_FilamentDiameter );
 
   printer_reset();
 
-  /// main loop
+  // main loop
   TrackballUI::loop();
 
   SimpleUI::terminateImGui();
