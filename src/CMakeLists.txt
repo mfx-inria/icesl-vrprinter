@@ -23,6 +23,7 @@ include_directories(
 
 ADD_EXECUTABLE(icesl-vrprint
   icesl-vrprint.cpp
+  icesl-vrprint.h
   shapes.cpp
   shapes.h
   bed.cpp
