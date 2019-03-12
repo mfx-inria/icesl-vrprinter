@@ -9,7 +9,7 @@
 // ----------------------------------------------------------------
 
 string load_gcode() {
-  std::string gcode_string = "";
+  std::string gcode_string;
 #ifdef EMSCRIPTEN
   emscripten_run_script("parseCommandLine();\n");
   if (!g_Downloading) {
@@ -122,8 +122,8 @@ void ImGuiPanel()
       static float nozzleDiameter = g_NozzleDiameter;
       ImGui::InputFloat("Nozzle diameter", &nozzleDiameter, 0.0f, 0.0f, 3);
       g_NozzleDiameter = clamp(nozzleDiameter, c_HeightFieldStep*2.0f, 10.0f);
-      // volumetric extrusion
-      ImGui::Checkbox("Volumetric extrusion", &g_EIsVolume);
+      // TODO volumetric extrusion
+      //ImGui::Checkbox("Volumetric extrusion", &g_EIsVolume);
     }
 
     // simulation control
