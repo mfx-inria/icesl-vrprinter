@@ -49,8 +49,6 @@ AUTO_BIND_SHADERS( simple final deposition )
 target_link_libraries(icesl-vrprint
   LibSL 
   LibSL_gl
-  lua
-  luabind
   libcore
   )
  
