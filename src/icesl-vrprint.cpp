@@ -1,4 +1,22 @@
-#include "icesl-vrprint.h"
+#include <imgui.h>
+
+#ifdef EMSCRIPTEN
+#include <emscripten.h>
+#include <emscripten/html5.h>
+#endif
+
+#ifndef EMSCRIPTEN
+#ifdef _MSC_VER
+#define glActiveTexture glActiveTextureARB
+#endif
+#endif
+
+#include <LibSL.h>
+#include <LibSL_gl.h>
+
+LIBSL_WIN32_FIX;
+
+// ----------------------------------------------------------------
 
 #include "bed.h"
 #include "shapes.h"
@@ -8,17 +26,123 @@
 
 // ----------------------------------------------------------------
 
-string load_gcode() {
-  std::string gcode_string;
-#ifdef EMSCRIPTEN
-  emscripten_run_script("parseCommandLine();\n");
-  if (!g_Downloading) {
-    gcode_string = loadFileIntoString("./icesl.gcode");
-  }
-#else
-  gcode_string = loadFileIntoString(openFileDialog(OFD_FILTER_GCODE).c_str());
-#endif
-  return gcode_string;
+using namespace std;
+
+// ----------------------------------------------------------------
+
+int           g_UIWidth = 350;
+
+int           g_ScreenWidth = 700;
+int           g_ScreenHeight = 700;
+int           g_RenderWidth = 700;
+int           g_RenderHeight = 700;
+
+int           g_RTWidth  = 1024;
+int           g_RTHeight = 1024;
+
+v2f           g_BedSize(200.0f, 150.0f);
+float         g_FilamentDiameter = 1.75f;
+float         g_NozzleDiameter = 0.4f;
+
+float         g_TimeStep = 500.0f;
+float         g_GlobalTime = 0.0f;
+
+int           g_StartAtLine = 0;
+bool          g_ColorOverhangs = false;
+
+std::string   g_GCode_string;
+
+typedef GPUMESH_MVF1(mvf_vertex_3f)                mvf_mesh;
+typedef GPUMesh_VertexBuffer<mvf_mesh>             SimpleMesh;
+
+AutoPtr<SimpleMesh>                      g_GPUMesh_quad;
+AutoPtr<SimpleMesh>                      g_GPUMesh_axis;
+
+AutoPtr<MeshRenderer<mvf_mesh> >         g_GPUMesh_sphere;
+AutoPtr<MeshRenderer<mvf_mesh> >         g_GPUMesh_cylinder;
+
+#include "simple.h"
+AutoBindShader::simple     g_ShaderSimple;
+#include "final.h"
+AutoBindShader::final      g_ShaderFinal;
+#include "deposition.h"
+AutoBindShader::deposition g_ShaderDeposition;
+
+RenderTarget2DRGBA_Ptr g_RT;
+
+m4x4f  g_LastView = m4x4f::identity();
+bool   g_Rotating = false;
+bool   g_Dragging = false;
+float  g_Zoom = 1.0f;
+float  g_ZoomTarget = 1.0f;
+
+std::vector<v3f>                 g_Trajectory;
+
+typedef struct 
+{
+  float time;
+  float radius;
+  v3f   a;
+  v3f   b;
+} t_height_segment;
+
+std::list<t_height_segment> g_HeightSegments;
+
+const float c_HeightFieldStep = 0.1f; // mm
+Array2D<float>   g_HeightField;
+
+v3f    g_PrevPos(0.0f);
+
+bool   g_ForceRedraw = true;
+bool   g_FatalError = false;
+bool   g_FatalErrorAllowRestart = false;
+string g_FatalErrorMessage = "unkonwn error";
+
+// ----------------------------------------------------------------
+
+template <class T_Mesh>
+void addBar(AutoPtr<T_Mesh> gpumesh, v3f a, v3f b, pair<v3f, v3f> uv, float sz = 0.1f)
+{
+  v3f a00 = (a - sz * uv.first - sz * uv.second);
+  v3f a01 = (a - sz * uv.first + sz * uv.second);
+  v3f a11 = (a + sz * uv.first + sz * uv.second);
+  v3f a10 = (a + sz * uv.first - sz * uv.second);
+  v3f b00 = (b - sz * uv.first - sz * uv.second);
+  v3f b01 = (b - sz * uv.first + sz * uv.second);
+  v3f b11 = (b + sz * uv.first + sz * uv.second);
+  v3f b10 = (b + sz * uv.first - sz * uv.second);
+
+  gpumesh->vertex_3(a00[0], a00[1], a00[2]);
+  gpumesh->vertex_3(b00[0], b00[1], b00[2]);
+  gpumesh->vertex_3(b10[0], b10[1], b10[2]);
+  //
+  gpumesh->vertex_3(a00[0], a00[1], a00[2]);
+  gpumesh->vertex_3(b10[0], b10[1], b10[2]);
+  gpumesh->vertex_3(a10[0], a10[1], a10[2]);
+
+  gpumesh->vertex_3(a10[0], a10[1], a10[2]);
+  gpumesh->vertex_3(b11[0], b11[1], b11[2]);
+  gpumesh->vertex_3(b10[0], b10[1], b10[2]);
+  //
+  gpumesh->vertex_3(a10[0], a10[1], a10[2]);
+  gpumesh->vertex_3(a11[0], a11[1], a11[2]);
+  gpumesh->vertex_3(b11[0], b11[1], b11[2]);
+
+  gpumesh->vertex_3(a11[0], a11[1], a11[2]);
+  gpumesh->vertex_3(b01[0], b01[1], b01[2]);
+  gpumesh->vertex_3(b11[0], b11[1], b11[2]);
+  //
+  gpumesh->vertex_3(a11[0], a11[1], a11[2]);
+  gpumesh->vertex_3(a01[0], a01[1], a01[2]);
+  gpumesh->vertex_3(b01[0], b01[1], b01[2]);
+
+  gpumesh->vertex_3(a01[0], a01[1], a01[2]);
+  gpumesh->vertex_3(b00[0], b00[1], b00[2]);
+  gpumesh->vertex_3(b01[0], b01[1], b01[2]);
+  //
+  gpumesh->vertex_3(a00[0], a00[1], a00[2]);
+  gpumesh->vertex_3(b00[0], b00[1], b00[2]);
+  gpumesh->vertex_3(a01[0], a01[1], a01[2]);
 }
 
 // ----------------------------------------------------------------
@@ -57,6 +181,20 @@ void makeAxisMesh()
 
 // ----------------------------------------------------------------
 
+bool                                     g_Downloading = false;
+float                                    g_DownloadProgress = 0.0f;
+
+// ----------------------------------------------------------------
+
+std::vector<float> g_Flows(64,0.0f);
+int                g_FlowsCount = 0;
+float              g_FlowsSample = 0.0f;
+std::vector<float> g_Speeds(64,0.0f);
+int                g_SpeedsCount = 0;
+float              g_SpeedsSample = 0.0f;
+
+// ----------------------------------------------------------------
+
 void ImGuiPanel()
 {
 
@@ -78,86 +216,38 @@ void ImGuiPanel()
       ImGui::ProgressBar(g_DownloadProgress);
       ImGui::End();
     }
-
-    // main imgui window
     ImGui::SetNextWindowPos(ImVec2(0, 0), ImGuiSetCond_Once);
     ImGui::SetNextWindowSize(ImVec2(g_UIWidth, 750), ImGuiSetCond_Once);
-
-    ImGuiWindowFlags window_flags = 0;
-    window_flags |= ImGuiWindowFlags_NoMove;
-    window_flags |= ImGuiWindowFlags_NoResize;
-    window_flags |= ImGuiWindowFlags_NoCollapse;
-
-    ImGui::Begin("Virtual 3D printer", false, window_flags); // PB: initialize the main imgui window, with flags to disable closing it and other features
+    ImGui::Begin("Virtual 3D printer");
     ImGui::PushItemWidth(200);
-
-    // gcode load and informations
-    ImGui::SetNextTreeNodeOpen(true);
-    if (ImGui::CollapsingHeader("Gcode")) {
-      static bool gcode_loaded = false;
-      if (ImGui::Button("Load a Gcode")) {
-        g_GCode_string = load_gcode();
-        gcode_start(g_GCode_string.c_str());        
-        motion_start(g_FilamentDiameter); 
-        printer_reset();
-        g_ForceRedraw = true;
-        gcode_loaded = true;
-      }
-      // TODO get selected file name
-      /*
-      if (gcode_loaded) {
-        ImGui::SameLine();
-        ImGui::Text("Gcode_file_name"); 
-      }
-      */
-    }
 
     // printer setup
     ImGui::SetNextTreeNodeOpen(true);
-    if (ImGui::CollapsingHeader("Printer")) {
-      // filament diameter
+    if (ImGui::CollapsingHeader("Printer")) {      
       ImGui::InputFloat("Filament diameter", &g_FilamentDiameter, 0.0f, 0.0f, 3);
       g_FilamentDiameter = clamp(g_FilamentDiameter, 0.1f, 10.0f);
-      // nozzle diameter
       static float nozzleDiameter = g_NozzleDiameter;
       ImGui::InputFloat("Nozzle diameter", &nozzleDiameter, 0.0f, 0.0f, 3);
-      g_NozzleDiameter = clamp(nozzleDiameter, c_HeightFieldStep*2.0f, 10.0f);
-      // TODO volumetric extrusion
-      //ImGui::Checkbox("Volumetric extrusion", &g_EIsVolume);
-    }
-
-    // simulation control
-    ImGui::SetNextTreeNodeOpen(true);
-    if (ImGui::CollapsingHeader("Simulation Control")) {
-      if (ImGui::Button("Play")) {
-        // TODO simulation play
-      }
-      ImGui::SameLine();
-      if (ImGui::Button("Pause")) {
-        // TODO simulation pause
-      }
-      ImGui::SameLine();
-      if (ImGui::Button("Stop")) {
-        // TODO simulation stop
-      }
-      ImGui::SameLine();
+      g_NozzleDiameter = clamp(nozzleDiameter, c_HeightFieldStep*2.0f, 10.0f);      
+      ImGui::InputInt("Start at GCode line", &g_StartAtLine);
       if (ImGui::Button("Reset")) {
-        // TODO change archi to be able to get these variables from "anywhere"
-        //g_NozzleDiameter = nozzleDiameter;
+        g_NozzleDiameter = nozzleDiameter;
         printer_reset();
         g_ForceRedraw = true;
       }
-      ImGui::InputInt("Start at GCode line", &g_StartAtLine);
-      ImGui::SliderFloat("Time step (msec)", &g_TimeStep, 0.1f, 6000.0f,"%.1f",3.0f);
+    }
+    // control
+    ImGui::SetNextTreeNodeOpen(true);
+    if (ImGui::CollapsingHeader("Control")) {
+      ImGui::SliderFloat("Time step (msec)", &g_TimeStep, 0.1f, 3000.0f,"%.1f",3.0f);
       ImGui::Checkbox("Color overhangs", &g_ColorOverhangs);
     }
-
-    // simulation status
+    // status
     ImGui::SetNextTreeNodeOpen(true);
-    if (ImGui::CollapsingHeader("Simulation Status")) {
+    if (ImGui::CollapsingHeader("Status")) {
       int line = gcode_line();
-      ImGui::InputInt("Current GCode line", &line, false);
-      ImGui::InputFloat3("XYZ Position (mm)", &motion_get_current_pos()[0]);
+      ImGui::InputInt("GCode line", &line);
+      ImGui::InputFloat3("XYZ (mm)", &motion_get_current_pos()[0]);
       // flow graph
       float flow = motion_get_current_flow() * 1000.0f;
       g_FlowsSample += flow;
@@ -194,7 +284,9 @@ void ImGuiPanel()
     ImGui::End();
 
   }
+
   ImGui::Render();
+
 }
 
 // ----------------------------------------------------------------
@@ -291,6 +383,9 @@ m4x4f alignAlongSegment(const v3f& p0, const v3f& p1)
 
 // ----------------------------------------------------------------
 
+const float ZNear = 0.1f;
+const float ZFar  = 500.0f;
+
 void mainRender()
 {
   static t_time tm_lastChange = milliseconds();
@@ -324,7 +419,10 @@ void mainRender()
     TrackballUI::trackball().setRadius(ex / (g_Zoom*g_Zoom));
 
     // view matrix
-    m4x4f view = scaleMatrix(v3f(g_Zoom)) * TrackballUI::matrix() * translationMatrix(-bx.center());
+    m4x4f view =          
+        translationMatrix(v3f(0, 0, g_Zoom))
+      * TrackballUI::matrix()
+      * translationMatrix(-bx.center());
 
     // should we redraw?
     bool redraw = true;
@@ -569,8 +667,8 @@ void mainRender()
 
 void mainKeyboard(unsigned char key)
 {
-  if (key == 'e')      g_ZoomTarget = g_ZoomTarget*1.01f;
-  else if (key == 'r') g_ZoomTarget = g_ZoomTarget / 1.01f;
+  if (key == 'e')      g_ZoomTarget = g_ZoomTarget*1.1f;
+  else if (key == 'r') g_ZoomTarget = g_ZoomTarget / 1.1f;
 }
 
 // ----------------------------------------------------------------
@@ -600,6 +698,9 @@ void mainMouseButton(uint x, uint y, uint btn, uint flags)
 // ----------------------------------------------------------------
 
 #ifdef EMSCRIPTEN
+
+#include <emscripten/bind.h>
+
 void beginDownload()
 {
   g_Downloading = true;
@@ -629,12 +730,12 @@ EMSCRIPTEN_BINDINGS(my_module) {
 
 int main(int argc, const char **argv)
 {
-  // init simple UI
+  /// init simple UI
   TrackballUI::onRender = mainRender;
   TrackballUI::onKeyPressed = mainKeyboard;
   TrackballUI::onMouseButtonPressed = mainMouseButton;
 
-  TrackballUI::init(g_ScreenWidth + g_UIWidth, g_ScreenHeight);
+  TrackballUI::init(g_UIWidth+g_ScreenWidth, g_ScreenHeight);
 
   // GL init
   glEnable(GL_DEPTH_TEST);
@@ -686,7 +787,7 @@ int main(int argc, const char **argv)
   g_GPUMesh_sphere = AutoPtr<MeshRenderer<mvf_mesh> >( new MeshRenderer<mvf_mesh>(shape_sphere( 1.0f,32 )) );
   g_GPUMesh_cylinder = AutoPtr<MeshRenderer<mvf_mesh> >(new MeshRenderer<mvf_mesh>(shape_cylinder(1.0f, 1.0f, 1.0f, 32)));
 
-  // default view
+  /// default view
   TrackballUI::trackball().set(v3f(-g_BedSize[0]/2.0, -g_BedSize[1] / 2.0,-300.0f), v3f(0), quatf(v3f(1, 0, 0), -1.0f)*quatf(v3f(0, 0, 1), 0.0f));
   TrackballUI::trackball().setCenter(v3f(g_BedSize[0] / 2.0, g_BedSize[1] / 2.0, 10.0f));
   TrackballUI::trackball().setBallSpeed(0.0f);
@@ -702,8 +803,7 @@ int main(int argc, const char **argv)
 
   SimpleUI::initImGui();
 
-  // load gcode
-#if 0 ///PB: Old gcode loading routine, now in load_gcode() method
+  /// load gcode
 #ifdef EMSCRIPTEN
   emscripten_run_script("parseCommandLine();\n");
   if (!g_Downloading) {
@@ -713,25 +813,16 @@ int main(int argc, const char **argv)
     emscripten_run_script(command.c_str());
   }
 #else
-  std::string g_GCode_string = loadFileIntoString(openFileDialog(OFD_FILTER_GCODE).c_str());
+  std::string g_GCode_string = loadFileIntoString(
+    "C:\\Users\\slefebvr\\AppData\\Roaming\\IceSL\\3DBenchy.stl.gcode"
+  );
   gcode_start(g_GCode_string.c_str());
 #endif
-#endif
-
-  g_GCode_string = load_gcode();
-  gcode_start(g_GCode_string.c_str());
-
-  // load gcode in editor window for web-view
-#ifdef EMSCRIPTEN
-  std::string command = "setupEditor();";
-  emscripten_run_script(command.c_str());
-#endif
-
   motion_start( g_FilamentDiameter );
 
   printer_reset();
 
-  // main loop
+  /// main loop
   TrackballUI::loop();
 
   SimpleUI::terminateImGui();

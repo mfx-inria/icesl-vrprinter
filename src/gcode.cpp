@@ -78,23 +78,7 @@ bool gcode_advance()
             g_Pos[3] = f + g_Offset[3];
           } else if (c == 'f') {
             g_Speed = f / 60.0f;
-          } else if ((c >= 'a' && c <= 'd') || c == 'h') {
-            float ratio = g_Parser->readFloat();
-            ////////////////// HACK for debugging
-            if (c == 'a' && ratio > 0) {
-              g_Extruder = 0;
-            } else if (c == 'b' && ratio > 0) {
-              g_Extruder = 1;
-            } else if (c == 'c' && ratio > 0) {
-              g_Extruder = 2;
-            } else if (c == 'd' && ratio > 0) {
-              g_Extruder = 3;
-            } else if (c == 'h' && ratio > 0) {
-              g_Extruder = 4;
-            } else {
-              g_Extruder = 0;
-            }
-            /////////////////////////////////////
+          } else if (c >= 'a' && c <= 'f') {
             // TODO mixing ratios
           } else {
             g_GCodeError = true;
