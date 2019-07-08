@@ -78,7 +78,7 @@ float  g_ZoomTarget = 1.0f;
 
 std::vector<v3f>                 g_Trajectory;
 
-typedef struct 
+typedef struct
 {
   float time;
   float radius;
@@ -223,12 +223,12 @@ void ImGuiPanel()
 
     // printer setup
     ImGui::SetNextTreeNodeOpen(true);
-    if (ImGui::CollapsingHeader("Printer")) {      
+    if (ImGui::CollapsingHeader("Printer")) {
       ImGui::InputFloat("Filament diameter", &g_FilamentDiameter, 0.0f, 0.0f, 3);
       g_FilamentDiameter = clamp(g_FilamentDiameter, 0.1f, 10.0f);
       static float nozzleDiameter = g_NozzleDiameter;
       ImGui::InputFloat("Nozzle diameter", &nozzleDiameter, 0.0f, 0.0f, 3);
-      g_NozzleDiameter = clamp(nozzleDiameter, c_HeightFieldStep*2.0f, 10.0f);      
+      g_NozzleDiameter = clamp(nozzleDiameter, c_HeightFieldStep*2.0f, 10.0f);
       ImGui::InputInt("Start at GCode line", &g_StartAtLine);
       if (ImGui::Button("Reset")) {
         g_NozzleDiameter = nozzleDiameter;
@@ -258,7 +258,7 @@ void ImGuiPanel()
         g_Flows.push_back(g_FlowsSample);
         g_FlowsCount = 0;
         g_FlowsSample = 0.0f;
-      }      
+      }
       ImGui::PlotLines("Flow (mm^3/sec)", &g_Flows[0], g_Flows.size());
       // speed graph
       float speed = gcode_speed();
@@ -301,7 +301,7 @@ string jsEncodeString(const char *strin)
     } else if (strin[i] == '\n') {
       str = str + "\\n";
     } else if (strin[i] == '\r') {
-      
+
     } else if (strin[i] == '&') {
       str = str + "\\&";
     } else if (strin[i] == '\'') {
@@ -419,7 +419,10 @@ void mainRender()
     TrackballUI::trackball().setRadius(ex / (g_Zoom*g_Zoom));
 
     // view matrix
-    m4x4f view = scaleMatrix(v3f(g_Zoom)) * TrackballUI::matrix() * translationMatrix(-bx.center());
+    m4x4f view =
+        translationMatrix(v3f(0, 0, g_Zoom))
+      * TrackballUI::matrix()
+      * translationMatrix(-bx.center());
 
     // should we redraw?
     bool redraw = true;
@@ -669,8 +672,8 @@ void mainRender()
 
 void mainKeyboard(unsigned char key)
 {
-  if (key == 'e')      g_ZoomTarget = g_ZoomTarget*1.01f;
-  else if (key == 'r') g_ZoomTarget = g_ZoomTarget / 1.01f;
+  if (key == 'e')      g_ZoomTarget = g_ZoomTarget*1.1f;
+  else if (key == 'r') g_ZoomTarget = g_ZoomTarget / 1.1f;
 }
 
 // ----------------------------------------------------------------
@@ -726,7 +729,7 @@ EMSCRIPTEN_BINDINGS(my_module) {
   emscripten::function("endDownload", &endDownload);
 }
 
-#endif 
+#endif
 
 // ----------------------------------------------------------------
 
@@ -815,8 +818,9 @@ int main(int argc, const char **argv)
     emscripten_run_script(command.c_str());
   }
 #else
-  std::string g_GCode_string = loadFileIntoString("E:\\SLEFEBVR\\PROJECTS\\ALL\\curvislice\\models\\kitten__mid2.000000kitten__mid2.000000.gcode");
-  // std::string g_GCode_string = loadFileIntoString("E:\\SLEFEBVR\\PROJECTS\\MODELS\\knot.stl.gcode");
+  std::string g_GCode_string = loadFileIntoString(
+    "C:\\Users\\slefebvr\\AppData\\Roaming\\IceSL\\3DBenchy.stl.gcode"
+  );
   gcode_start(g_GCode_string.c_str());
 #endif
   motion_start( g_FilamentDiameter );

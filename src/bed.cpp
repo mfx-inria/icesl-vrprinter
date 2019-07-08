@@ -26,7 +26,6 @@ void bed_init()
     ,
     //FP
   #ifdef EMSCRIPTEN
-    "#extension GL_OES_standard_derivatives : enable\n"
     "precision mediump float;\n"
   #endif
     "uniform vec2 u_tex_scale;\n"
