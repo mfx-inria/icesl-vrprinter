@@ -1,3 +1,9 @@
+/*
+
+NOTE: we assume there is no curved printing, eg z grows monotically
+
+*/
+
 #include <imgui.h>
 
 #ifdef EMSCRIPTEN
@@ -40,15 +46,17 @@ int           g_RenderHeight = 700;
 int           g_RTWidth  = 1024;
 int           g_RTHeight = 1024;
 
-v2f           g_BedSize(200.0f, 150.0f);
+v2f           g_BedSize(250.0f, 150.0f);
 float         g_FilamentDiameter = 1.75f;
-float         g_NozzleDiameter = 0.4f;
+float         g_NozzleDiameter   = 0.4f;
+const float   c_HeightFieldStep  = 0.05f; // mm
 
-float         g_TimeStep = 500.0f;
-float         g_GlobalTime = 0.0f;
+float         g_MmStep = 0.4f;
 
-int           g_StartAtLine = 0;
-bool          g_ColorOverhangs = false;
+float         g_GlobalDepositionLength = 0.0f;
+
+int           g_StartAtLine    = 0;
+bool          g_ColorOverhangs = true;
 
 std::string   g_GCode_string;
 
@@ -80,7 +88,7 @@ std::vector<v3f>                 g_Trajectory;
 
 typedef struct
 {
-  float time;
+  float deplength;
   float radius;
   v3f   a;
   v3f   b;
@@ -88,12 +96,14 @@ typedef struct
 
 std::list<t_height_segment> g_HeightSegments;
 
-const float c_HeightFieldStep = 0.1f; // mm
-Array2D<float>   g_HeightField;
+AAB<3>                   g_HeightFieldBox;
+
+Array2D<Tuple<float,1> > g_HeightField;
 
 v3f    g_PrevPos(0.0f);
 
 bool   g_ForceRedraw = true;
+bool   g_ForceClear  = false;
 bool   g_FatalError = false;
 bool   g_FatalErrorAllowRestart = false;
 string g_FatalErrorMessage = "unkonwn error";
@@ -150,12 +160,12 @@ void addBar(AutoPtr<T_Mesh> gpumesh, v3f a, v3f b, pair<v3f, v3f> uv, float sz =
 void printer_reset()
 {
   gcode_reset();
-  g_PrevPos = v3f(0.0f);
-  g_Trajectory.clear();
+  g_PrevPos      = v3f(0.0f);
+  g_Trajectory    .clear();
   g_HeightSegments.clear();
-  g_GlobalTime = 0.0f;
-  float prev_z = 0.0f;
-  float curr_z = 0.0f;
+  g_GlobalDepositionLength = 0.0f;
+  float prev_z   = 0.0f;
+  float curr_z   = 0.0f;
   while (gcode_line() < g_StartAtLine) {
     gcode_advance();
     if (gcode_next_pos()[2] > curr_z) {
@@ -165,6 +175,28 @@ void printer_reset()
   }
   g_HeightField.fill(prev_z);
   motion_reset(g_FilamentDiameter);
+}
+
+// ----------------------------------------------------------------
+
+void session_start()
+{
+  gcode_start(g_GCode_string.c_str());
+  // build path box (traverses the entire gcode ... a bit sad, but ...)
+  g_HeightFieldBox = AAB<3>();
+  while (gcode_advance()) {
+    if (gcode_next_pos()[3] > 0.0f && gcode_next_pos()[2] > 3.0f * g_NozzleDiameter) { // we ignore first layers due to purge. should be fine? hmmm
+      g_HeightFieldBox.addPoint(v3f(gcode_next_pos()));
+    }
+  }
+  gcode_reset();
+  // height field
+  int hszx = ceil(g_HeightFieldBox.extent()[0] / c_HeightFieldStep);
+  int hszy = ceil(g_HeightFieldBox.extent()[1] / c_HeightFieldStep);
+  cerr << "Allocated height field " << printByteSize(hszx * hszy * sizeof(float)) << endl;
+  g_HeightField.allocate(hszx, hszy);
+  // reset printer
+  printer_reset();
 }
 
 // ----------------------------------------------------------------
@@ -228,19 +260,23 @@ void ImGuiPanel()
       g_FilamentDiameter = clamp(g_FilamentDiameter, 0.1f, 10.0f);
       static float nozzleDiameter = g_NozzleDiameter;
       ImGui::InputFloat("Nozzle diameter", &nozzleDiameter, 0.0f, 0.0f, 3);
-      g_NozzleDiameter = clamp(nozzleDiameter, c_HeightFieldStep*2.0f, 10.0f);
+      g_NozzleDiameter = clamp(nozzleDiameter, c_HeightFieldStep * 2.0f, 10.0f);
       ImGui::InputInt("Start at GCode line", &g_StartAtLine);
       if (ImGui::Button("Reset")) {
         g_NozzleDiameter = nozzleDiameter;
         printer_reset();
         g_ForceRedraw = true;
       }
+      ImGui::SameLine();
+      if (ImGui::Button("Clear below")) {
+        g_ForceClear = true;
+      }
     }
     // control
     ImGui::SetNextTreeNodeOpen(true);
     if (ImGui::CollapsingHeader("Control")) {
-      ImGui::SliderFloat("Time step (msec)", &g_TimeStep, 0.1f, 3000.0f,"%.1f",3.0f);
-      ImGui::Checkbox("Color overhangs", &g_ColorOverhangs);
+      ImGui::SliderFloat("Step (mm)", &g_MmStep, 0.1f, 100.0f,"%.1f",3.0f);
+      ImGui::Checkbox("Color overlaps (blue) and overhangs (red)", &g_ColorOverhangs);
     }
     // status
     ImGui::SetNextTreeNodeOpen(true);
@@ -268,7 +304,7 @@ void ImGuiPanel()
         g_SpeedsSample /= (float)g_SpeedsCount;
         g_Speeds.erase(g_Speeds.begin());
         g_Speeds.push_back(g_SpeedsSample);
-        g_SpeedsCount = 0;
+        g_SpeedsCount  = 0;
         g_SpeedsSample = 0.0f;
       }
       ImGui::PlotLines("Speed (mm/sec)", &g_Speeds[0], g_Speeds.size());
@@ -318,11 +354,11 @@ string jsEncodeString(const char *strin)
 
 void rasterizeDiskInHeightField(const v2i& p,float z,float r)
 {
-  int N = ceil(r / c_HeightFieldStep);
+  int N = round(r / c_HeightFieldStep);
   ForRange(nj, -N, N) {
     ForRange(ni, -N, N) {
-      if (sqrt((float)(ni * ni + nj * nj)) < N) {
-        float& h = g_HeightField.at<Clamp>(p[0] + ni, p[1] + nj);
+      if (ni * ni + nj * nj < N*N) {
+        float& h = g_HeightField.at<Clamp>(p[0] + ni, p[1] + nj)[0];
         h = max(h, z);
       }
     }
@@ -335,32 +371,82 @@ void rasterizeInHeightField(const v3f& a, const v3f&b, float r)
   v3f step = v3f(b - a);
   float len = length(v2f(step));
   if (len < 1e-6f) {
-    v2i p = v2i(round((a[0]) / c_HeightFieldStep), round((a[1]) / c_HeightFieldStep));
+    v2i p = v2i(
+      round((a[0] - g_HeightFieldBox.minCorner()[0]) / c_HeightFieldStep), 
+      round((a[1] - g_HeightFieldBox.minCorner()[1]) / c_HeightFieldStep));
     rasterizeDiskInHeightField(p, max(a[2],b[2]), r);
     return;
   }
   step = step / len;
   float l = 0.0f;
   while (l < len) {
-    v2i p = v2i(round((cur[0]) / c_HeightFieldStep), round((cur[1]) / c_HeightFieldStep));
+    v2i p = v2i(
+      round((cur[0] - g_HeightFieldBox.minCorner()[0]) / c_HeightFieldStep), 
+      round((cur[1] - g_HeightFieldBox.minCorner()[1]) / c_HeightFieldStep));
     rasterizeDiskInHeightField(p, cur[2], r);
     cur += step * c_HeightFieldStep;
-    l += c_HeightFieldStep;
+    l   += c_HeightFieldStep;
   }
 }
 
 float heightAt(const v3f& a, float r)
 {
   float h = 0.0f;
-  int N = max(1,ceil(r / c_HeightFieldStep));
+  int   N = max(1,round(r / c_HeightFieldStep));
+  v2i p = v2i(
+    round((a[0] - g_HeightFieldBox.minCorner()[0]) / c_HeightFieldStep),
+    round((a[1] - g_HeightFieldBox.minCorner()[1]) / c_HeightFieldStep));
   ForRange(nj, -N, N) {
     ForRange(ni, -N, N) {
-      v2i p = v2i(round(a[0] / c_HeightFieldStep), round(a[1] / c_HeightFieldStep));
-      float v = g_HeightField.at<Clamp>(p[0], p[1]);
-      h = max(h, v);
+      float v = g_HeightField.at<Clamp>(p[0] + ni, p[1] + nj)[0];
+      h       = max(h, v);
     }
   }
   return h;
+}
+
+float danglingAt(float max_th,const v3f &a, float r)
+{
+  float d = 0.0f;
+  int   N = max(1, round(r / c_HeightFieldStep));
+  int num = 0;
+  v2i p = v2i(
+    round((a[0] - g_HeightFieldBox.minCorner()[0]) / c_HeightFieldStep),
+    round((a[1] - g_HeightFieldBox.minCorner()[1]) / c_HeightFieldStep));
+  ForRange(nj, -N, N) {
+    ForRange(ni, -N, N) {
+      if (ni * ni + nj * nj < N * N) {
+        float v = g_HeightField.at<Clamp>(p[0] + ni, p[1] + nj)[0];
+        if (v + max_th + 0.05f < a[2]) {
+          d += 1.0f;
+        }
+        num++;
+      }
+    }
+  }
+  return d / (float)(num);
+}
+
+float overlapAt(float th, const v3f &a, float r)
+{
+  float o = 0.0f;
+  int   N = max(1, round(r / c_HeightFieldStep) );
+  int num = 0;
+  v2i   p = v2i(
+    round((a[0] - g_HeightFieldBox.minCorner()[0]) / c_HeightFieldStep),
+    round((a[1] - g_HeightFieldBox.minCorner()[1]) / c_HeightFieldStep));
+  ForRange(nj, -N, N) {
+    ForRange(ni, -N, N) {
+      if (ni * ni + nj * nj < N * N) {
+        float v = g_HeightField.at<Clamp>(p[0] + ni, p[1] + nj)[0];
+        if (v + 0.01f > a[2]) {
+          o += 1.0f;
+        }
+        num++;
+      }
+    }
+  }
+  return o / (float)(num);
 }
 
 // ----------------------------------------------------------------
@@ -383,6 +469,124 @@ m4x4f alignAlongSegment(const v3f& p0, const v3f& p1)
 
 // ----------------------------------------------------------------
 
+void step_simulation(bool gpu_draw)
+{
+  float tmstep = g_MmStep / (gcode_speed() / 1000.0f);
+  float step_ms = tmstep;
+  while (step_ms > 0.0f) {
+    // step motion
+    bool done;
+    float delta_ms = motion_step(step_ms, done);
+    if (gcode_error()) {
+#ifdef EMSCRIPTEN
+      std::string command = "errorLine(" + to_string(gcode_line()) + ");";
+      emscripten_run_script(command.c_str());
+#endif
+    }
+    step_ms -= delta_ms;
+    // line highlighting
+#ifdef EMSCRIPTEN
+    static int last_line = -1;
+    if (gcode_line() != last_line) {
+      std::string command = "highlightLine(" + to_string(gcode_line()) + ");";
+      emscripten_run_script(command.c_str());
+      last_line = gcode_line();
+    }
+#endif
+    // pushed material volume during time interval
+    float vf = motion_get_current_flow() * delta_ms; // recover pushed mm^3
+    v3f pos = v3f(motion_get_current_pos());
+    float h = heightAt(pos, g_NozzleDiameter / 2.0f);
+
+    static float th_prev = 0.0f;
+    float th = pos[2] - h;
+    if (th < 1e-6f) {
+      th = th_prev;
+    } else {
+      th_prev = th;
+    }
+
+    g_Trajectory.push_back(pos);
+    float len = length(pos - g_PrevPos);
+    if (vf > 0.0f) {
+
+      // advance
+      g_GlobalDepositionLength += len;
+
+      // print move
+      float sa       = vf / len;
+      float r        = sqrt(sa / (float)M_PI); // sa = pi*r^2
+      float squash_t = min(th / 2.0f, r);
+      float rs       = disk_squashed_radius(r, squash_t);
+
+      float max_th   = vf / len / g_NozzleDiameter;
+      float dangling = danglingAt(max_th, pos, g_NozzleDiameter / 2.0f);
+      float overlap  = overlapAt(th, pos, g_NozzleDiameter / 2.0f);
+
+      // dangling only if > 50%
+      dangling = max(dangling - 0.5f, 0.0f) * 2.0f;
+      // overlap only if > 5%
+      overlap  = max(overlap - 0.05f, 0.0f) / 0.95f;
+
+      if (gpu_draw) {
+        g_ShaderDeposition.u_height.set(pos[2]);
+        g_ShaderDeposition.u_thickness.set(th);
+        g_ShaderDeposition.u_radius.set(r);
+        g_ShaderDeposition.u_dangling.set(dangling);
+        g_ShaderDeposition.u_overlap.set(overlap);
+        g_ShaderDeposition.u_extruder.set(0.25f + 0.75f * gcode_extruder());
+        // add cylinder from previous
+        g_ShaderDeposition.u_model.set(
+          translationMatrix(v3f(0, 0, -squash_t))
+          * alignAlongSegment(v3f(g_PrevPos), v3f(pos))
+          * scaleMatrix(v3f(rs, rs, 1))
+        );
+        g_GPUMesh_cylinder->render();
+        // add spheres
+        g_ShaderDeposition.u_model.set(
+          translationMatrix(g_PrevPos)
+          * translationMatrix(v3f(0, 0, -squash_t))
+          * scaleMatrix(v3f(rs))
+        );
+        g_GPUMesh_sphere->render();
+        g_ShaderDeposition.u_model.set(
+          translationMatrix(pos)
+          * translationMatrix(v3f(0, 0, -squash_t))
+          * scaleMatrix(v3f(rs))
+        );
+        g_GPUMesh_sphere->render();
+      }
+
+      // update height field
+      t_height_segment seg;
+      seg.a = pos;
+      seg.b = g_PrevPos;
+      seg.deplength = g_GlobalDepositionLength;
+      seg.radius = rs;
+      g_HeightSegments.push_back(seg);
+    }
+    g_PrevPos = pos;
+#if 1
+    // height segments (with delay)
+    auto S = g_HeightSegments.begin();
+    while (S != g_HeightSegments.end()) {
+      if ( S->deplength + g_MmStep * 2.0f < g_GlobalDepositionLength
+        || max(S->a[2],S->b[2]) < pos[2]
+        ) {
+        rasterizeInHeightField(S->a, S->b, S->radius);
+        S = g_HeightSegments.erase(S);
+      } else {
+        // S++;
+        break; // monotonous so no need to continue
+      }
+    }
+#endif
+    if (done) break;
+  } // iter
+}
+
+// ----------------------------------------------------------------
+
 const float ZNear = 0.1f;
 const float ZFar  = 500.0f;
 
@@ -397,7 +601,7 @@ void mainRender()
 #ifdef EMSCRIPTEN
   if (LibSL::System::File::exists("/print.gcode")) {
     g_GCode_string = loadFileIntoString("/print.gcode");
-    gcode_start(g_GCode_string.c_str());
+    session_start();
     motion_start(g_FilamentDiameter);
     std::remove("/print.gcode");
     g_ForceRedraw = true;
@@ -411,9 +615,6 @@ void mainRender()
     bx.addPoint( v3f(100.0));
     float ex = tupleMax(bx.extent());
     m4x4f proj = perspectiveMatrixGL<float>((float)M_PI / 6.0f, 1.0f, ZNear, ZFar);
-      //bx.center()[0] - ex * 0.8f, bx.center()[0] + ex * 0.8f,
-      //bx.center()[1] - ex * 0.8f, bx.center()[1] + ex * 0.8f,
-      //bx.center()[2] - ex * 4.0f, bx.maxCorner()[2] + ex * 4.0f);
 
     g_Zoom = g_Zoom + 0.1f * (g_ZoomTarget - g_Zoom);
     TrackballUI::trackball().setRadius(ex / (g_Zoom*g_Zoom));
@@ -442,6 +643,11 @@ void mainRender()
       // reset motion
       printer_reset();
     }
+    if (g_ForceClear) {
+      // clear
+      g_ForceClear = false;
+      LibSL::GPUHelpers::clearScreen(LIBSL_COLOR_BUFFER | LIBSL_DEPTH_BUFFER, 0.0f, 0.0f, 0.0f);
+    }
 
     glEnable(GL_CULL_FACE);
 
@@ -450,95 +656,9 @@ void mainRender()
     g_ShaderDeposition.u_view.set(view);
     g_ShaderDeposition.u_ZNear.set(ZNear);
     g_ShaderDeposition.u_ZFar.set(ZFar);
-    float step_ms = (float)g_TimeStep;
-    while (step_ms > 0.0f) {
-      // step motion
-      bool done;
-      float delta_ms = motion_step(step_ms, done);
-      if (gcode_error()) {
-#ifdef EMSCRIPTEN
-        std::string command = "errorLine(" + to_string(gcode_line()) + ");";
-        emscripten_run_script(command.c_str());
-#endif
-      }
-      g_GlobalTime += delta_ms;
-      step_ms -= delta_ms;
-      // line highlighting
-#ifdef EMSCRIPTEN
-      static int last_line = -1;
-      if (gcode_line() != last_line) {
-        std::string command = "highlightLine(" + to_string(gcode_line()) + ");";
-        emscripten_run_script(command.c_str());
-        last_line = gcode_line();
-      }
-#endif
-      // pushed material volume during time interval
-      float vf = motion_get_current_flow() * delta_ms; // recover pushed mm^3
-      v3f pos  = v3f(motion_get_current_pos());
-      float h  = heightAt(pos, g_NozzleDiameter);
 
-      static float t_prev = 0.0f;
-      float t  = pos[2] - h;
-      if (t < 1e-6f) t = t_prev;
-      else t_prev = t;
-      // std::cerr << t << ' ';
+    step_simulation(true);
 
-      g_Trajectory.push_back(pos);
-      float len = length(pos - g_PrevPos);
-      if (vf > 0.0f) {
-        // print move
-        float sa  = vf / len;
-        float r   = sqrt(sa / (float)M_PI); // sa = pi*r^2
-        float squash_t = min(t / 2.0f, r);
-        float rs  = disk_squashed_radius(r, squash_t);
-
-        g_ShaderDeposition.u_height.set(pos[2]);
-        g_ShaderDeposition.u_thickness.set(t);
-        g_ShaderDeposition.u_radius.set(r);
-        g_ShaderDeposition.u_extruder.set( 0.25f + 0.75f * gcode_extruder());
-        // add cylinder from previous
-        g_ShaderDeposition.u_model.set(
-          translationMatrix(v3f(0, 0, -squash_t))
-         *alignAlongSegment(v3f(g_PrevPos), v3f(pos))
-         *scaleMatrix(v3f(rs, rs, 1))
-        );
-        g_GPUMesh_cylinder->render();
-        // add spheres
-        g_ShaderDeposition.u_model.set(
-           translationMatrix(g_PrevPos)
-          *translationMatrix(v3f(0,0,-squash_t))
-          *scaleMatrix(v3f(rs))
-        );
-        g_GPUMesh_sphere->render();
-        g_ShaderDeposition.u_model.set(
-          translationMatrix(pos)
-          *translationMatrix(v3f(0, 0, -squash_t))
-          *scaleMatrix(v3f(rs))
-        );
-        g_GPUMesh_sphere->render();
-        // update height field
-        t_height_segment seg;
-        seg.a = pos;
-        seg.b = g_PrevPos;
-        seg.time = g_GlobalTime;
-        seg.radius = rs;
-        g_HeightSegments.push_back(seg);
-      }
-      g_PrevPos = pos;
-#if 1
-      // height segments (with delay)
-      auto S = g_HeightSegments.begin();
-      while (S != g_HeightSegments.end()) {
-        if (S->time < g_GlobalTime - g_TimeStep * 4) {
-          rasterizeInHeightField(S->a, S->b, S->radius);
-          S = g_HeightSegments.erase(S);
-        } else {
-          S++;
-        }
-      }
-#endif
-      if (done) break;
-    } // iter
     g_ShaderDeposition.end();
 
     g_RT->unbind();
@@ -601,24 +721,30 @@ void mainRender()
     }
 
 #if 0
+    //////////////////////////////////////////////////////////////
+    glViewport(g_UIWidth, 0, g_ScreenWidth/4, g_ScreenHeight/4);
+    glActiveTexture(GL_TEXTURE1);
+    glBindTexture(GL_TEXTURE_2D, g_RT->texture());
+    AutoPtr<Tex2DLum32F> texh(new Tex2DLum32F(g_HeightField));
+    LIBSL_GL_CHECK_ERROR;
     g_ShaderSimple.begin();
     g_ShaderSimple.u_projection.set(proj);
     g_ShaderSimple.u_view.set(view);
     g_ShaderSimple.u_color.set(v4f(0, 0, 1, 1));
-    g_ShaderSimple.u_alpha.set(1);
-    ForRange(j, 550, 750) {
-      ForRange(i, 900, 1100) {
-        if (g_HeightField.at(i, j) > 22.8f) {
-          g_ShaderSimple.u_view.set(
-            view
-            *translationMatrix(v3f((i + 0.5f)*c_HeightFieldStep, (j + 0.5f)*c_HeightFieldStep, g_HeightField.at(i, j)))
-            *scaleMatrix(v3f(0.2f))
-          );
-          g_GPUMesh_sphere->render();
-        }
-      }
-    }
+    g_ShaderSimple.u_alpha.set(1.0f);
+    LIBSL_GL_CHECK_ERROR;
+    g_ShaderSimple.u_use_tex.set(1);
+    g_ShaderSimple.u_tex.set(1);
+    LIBSL_GL_CHECK_ERROR;
+    g_ShaderSimple.u_projection.set(orthoMatrixGL(0.0f, 1.0f, 0.0f, 1.0f, -1.0f, 1.0f));
+    g_ShaderSimple.u_view.set(m4x4f::identity());
+    g_GPUMesh_quad->render();
+    g_ShaderSimple.u_use_tex.set(0);
+    LIBSL_GL_CHECK_ERROR;
     g_ShaderSimple.end();
+    LIBSL_GL_CHECK_ERROR;
+    glViewport(g_UIWidth, 0, g_ScreenWidth, g_ScreenHeight);
+    //////////////////////////////////////////////////////////////
 #endif
 
     // render bed
@@ -789,8 +915,8 @@ int main(int argc, const char **argv)
   LibSL::GPUHelpers::clearScreen(LIBSL_COLOR_BUFFER | LIBSL_DEPTH_BUFFER, 0.0f, 0.0f, 0.0f);
   g_RT->unbind();
 
-  g_GPUMesh_sphere = AutoPtr<MeshRenderer<mvf_mesh> >( new MeshRenderer<mvf_mesh>(shape_sphere( 1.0f,32 )) );
-  g_GPUMesh_cylinder = AutoPtr<MeshRenderer<mvf_mesh> >(new MeshRenderer<mvf_mesh>(shape_cylinder(1.0f, 1.0f, 1.0f, 32)));
+  g_GPUMesh_sphere = AutoPtr<MeshRenderer<mvf_mesh> >( new MeshRenderer<mvf_mesh>(shape_sphere( 1.0f, 12 )) );
+  g_GPUMesh_cylinder = AutoPtr<MeshRenderer<mvf_mesh> >(new MeshRenderer<mvf_mesh>(shape_cylinder(1.0f, 1.0f, 1.0f, 12)));
 
   /// default view
   TrackballUI::trackball().set(v3f(-g_BedSize[0]/2.0, -g_BedSize[1] / 2.0,-300.0f), v3f(0), quatf(v3f(1, 0, 0), -1.0f)*quatf(v3f(0, 0, 1), 0.0f));
@@ -799,13 +925,6 @@ int main(int argc, const char **argv)
   TrackballUI::trackball().setAllowRoll(false);
   TrackballUI::trackball().setUp(Trackball::Z_neg);
 
-  // height field
-  int hszx = ceil(g_BedSize[0] / c_HeightFieldStep);
-  int hszy = ceil(g_BedSize[1] / c_HeightFieldStep);
-  cerr << "Allocated height field " << printByteSize(hszx*hszy*sizeof(float)) << endl;
-  g_HeightField.allocate(hszx,hszy);
-  g_HeightField.fill(0.0f);
-
   SimpleUI::initImGui();
 
   /// load gcode
@@ -813,15 +932,17 @@ int main(int argc, const char **argv)
   emscripten_run_script("parseCommandLine();\n");
   if (!g_Downloading) {
     g_GCode_string = loadFileIntoString("./icesl.gcode");
-    gcode_start(g_GCode_string.c_str());
+    session_start();
     std::string command = "setupEditor();";
     emscripten_run_script(command.c_str());
   }
 #else
-  std::string g_GCode_string = loadFileIntoString(
-    "C:\\Users\\slefebvr\\AppData\\Roaming\\IceSL\\3DBenchy.stl.gcode"
+  g_GCode_string =
+    loadFileIntoString(
+    // "E:\\SLEFEBVR\\PROJECTS\\MODELS\\3DBenchy.stl.gcode"
+    "E:\\SLEFEBVR\\PROJECTS\\ALL\\accordion\\TMP\\knee2.gcode"
   );
-  gcode_start(g_GCode_string.c_str());
+  session_start();
 #endif
   motion_start( g_FilamentDiameter );
 

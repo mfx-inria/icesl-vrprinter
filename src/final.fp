@@ -29,7 +29,16 @@ void main()
   vec3 nrm = normalize(cross(p, q));
 
   if (u_color_overhangs == 1) {
-    gl_FragColor = vec4(nrm.zzz * vec3(1.0, 1.0-tex.z, 1.0-tex.z),1.0);
+    float d = tex.z;
+    float o = 0.0;
+    if (d >= 0.5) {
+      o = (d - 0.5)*2.0; 
+      d = 0.0;
+    } else {
+      d = d * 2.0;
+    }
+    vec3 clr = vec3(1.0 - o,1.0 - d - o,1.0 - d);
+    gl_FragColor = vec4(clr * nrm.zzz, 1.0);
   } else {
     if (tex.w < 0.5) {
       gl_FragColor = vec4(nrm.z * vec3(1.0,1.0,1.0), 1.0);

@@ -8,20 +8,24 @@ uniform mat4   u_model;
 uniform float  u_height;
 uniform float  u_thickness;
 uniform float  u_radius;
+uniform float  u_dangling;
+uniform float  u_overlap;
 
 varying vec3   v_pos;
 varying float  v_dangling;
+varying float  v_overlap;
 
 void main()
 {
-  vec3 vertex = (u_model * mvf_vertex).xyz;
-  vertex.z = clamp(vertex.z , u_height - u_thickness, u_height);
+  vec3 vertex      = (u_model * mvf_vertex).xyz;
+  vertex.z         = clamp(vertex.z , u_height - u_thickness, u_height);
 
-  v_dangling = abs(u_radius*2.0 - u_thickness);
+  v_dangling       = u_dangling;
+  v_overlap        = u_overlap;
 
   vec4 view_vertex = u_view * vec4(vertex, 1.0);
   vec4 proj_vertex = u_projection * view_vertex;
   
-  v_pos = view_vertex.xyz;
-  gl_Position = proj_vertex;
+  v_pos            = view_vertex.xyz;
+  gl_Position      = proj_vertex;
 }
