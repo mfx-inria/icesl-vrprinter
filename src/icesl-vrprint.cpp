@@ -49,7 +49,9 @@ int           g_RTHeight = 1024;
 v2f           g_BedSize(250.0f, 150.0f);
 float         g_FilamentDiameter = 1.75f;
 float         g_NozzleDiameter   = 0.4f;
-const float   c_HeightFieldStep  = 0.05f; // mm
+const float   c_HeightFieldStep  = 0.04f; // mm
+
+float         g_StatsHeightThres = 1.2f; // mm, ignored everything below regarding overlaps and dangling
 
 float         g_MmStep = 0.4f;
 
@@ -57,6 +59,14 @@ float         g_GlobalDepositionLength = 0.0f;
 
 int           g_StartAtLine    = 0;
 bool          g_ColorOverhangs = true;
+
+bool          g_InDangling = false;
+float         g_InDanglingStart = 0.0;
+std::map<int, float> g_DanglingHisto;
+
+bool          g_InOverlap = false;
+float         g_InOverlapStart = 0.0;
+std::map<int, float> g_OverlapHisto;
 
 std::string   g_GCode_string;
 
@@ -175,6 +185,11 @@ void printer_reset()
   }
   g_HeightField.fill(prev_z);
   motion_reset(g_FilamentDiameter);
+  // stats
+  g_InDangling = false;
+  g_DanglingHisto.clear();
+  g_InOverlap = false;
+  g_OverlapHisto.clear();
 }
 
 // ----------------------------------------------------------------
@@ -185,7 +200,7 @@ void session_start()
   // build path box (traverses the entire gcode ... a bit sad, but ...)
   g_HeightFieldBox = AAB<3>();
   while (gcode_advance()) {
-    if (gcode_next_pos()[3] > 0.0f && gcode_next_pos()[2] > 3.0f * g_NozzleDiameter) { // we ignore first layers due to purge. should be fine? hmmm
+    if (gcode_next_pos()[3] > 0.0f && gcode_next_pos()[2] > g_StatsHeightThres) { // we ignore first layers due to purge. should be fine? hmmm
       g_HeightFieldBox.addPoint(v3f(gcode_next_pos()));
     }
   }
@@ -275,7 +290,7 @@ void ImGuiPanel()
     // control
     ImGui::SetNextTreeNodeOpen(true);
     if (ImGui::CollapsingHeader("Control")) {
-      ImGui::SliderFloat("Step (mm)", &g_MmStep, 0.1f, 100.0f,"%.1f",3.0f);
+      ImGui::SliderFloat("Step (mm)", &g_MmStep, 0.01f, 10.0f,"%.2f",3.0f);
       ImGui::Checkbox("Color overlaps (blue) and overhangs (red)", &g_ColorOverhangs);
     }
     // status
@@ -308,6 +323,32 @@ void ImGuiPanel()
         g_SpeedsSample = 0.0f;
       }
       ImGui::PlotLines("Speed (mm/sec)", &g_Speeds[0], g_Speeds.size());
+      // dangling histogram
+      {
+        static std::vector<float> histo; /// oh this is ugly, very ugly
+        int maxv = 0;
+        for (auto h : g_DanglingHisto) {
+          maxv = max(maxv, h.first);
+        }
+        histo.resize(maxv+1);
+        for (auto h : g_DanglingHisto) {
+          histo[h.first] = h.second;
+        }
+        ImGui::PlotHistogram("dangling (red) ", &histo[0], histo.size());
+      }
+      // overlap histogram
+      {
+        static std::vector<float> histo; /// oh this is ugly, very ugly
+        int maxv = 0;
+        for (auto h : g_OverlapHisto) {
+          maxv = max(maxv, h.first);
+        }
+        histo.resize(maxv + 1);
+        for (auto h : g_OverlapHisto) {
+          histo[h.first] = h.second;
+        }
+        ImGui::PlotHistogram("overlaps (blue)", &histo[0], histo.size());
+      }
     }
     ImGui::End();
 
@@ -430,7 +471,7 @@ float danglingAt(float max_th,const v3f &a, float r)
 float overlapAt(float th, const v3f &a, float r)
 {
   float o = 0.0f;
-  int   N = max(1, round(r / c_HeightFieldStep) );
+  int   N = max(1, round(r / c_HeightFieldStep));
   int num = 0;
   v2i   p = v2i(
     round((a[0] - g_HeightFieldBox.minCorner()[0]) / c_HeightFieldStep),
@@ -495,8 +536,8 @@ void step_simulation(bool gpu_draw)
 #endif
     // pushed material volume during time interval
     float vf = motion_get_current_flow() * delta_ms; // recover pushed mm^3
-    v3f pos = v3f(motion_get_current_pos());
-    float h = heightAt(pos, g_NozzleDiameter / 2.0f);
+    v3f pos  = v3f(motion_get_current_pos());
+    float h  = heightAt(pos, g_NozzleDiameter / 2.0f);
 
     static float th_prev = 0.0f;
     float th = pos[2] - h;
@@ -507,11 +548,12 @@ void step_simulation(bool gpu_draw)
     }
 
     g_Trajectory.push_back(pos);
-    float len = length(pos - g_PrevPos);
-    if (vf > 0.0f) {
 
-      // advance
-      g_GlobalDepositionLength += len;
+    float len      = length(pos - g_PrevPos);
+    float dangling = 0.0f;
+    float overlap  = 0.0f;
+
+    if (vf > 0.0f) {
 
       // print move
       float sa       = vf / len;
@@ -520,13 +562,22 @@ void step_simulation(bool gpu_draw)
       float rs       = disk_squashed_radius(r, squash_t);
 
       float max_th   = vf / len / g_NozzleDiameter;
-      float dangling = danglingAt(max_th, pos, g_NozzleDiameter / 2.0f);
-      float overlap  = overlapAt(th, pos, g_NozzleDiameter / 2.0f);
 
-      // dangling only if > 50%
-      dangling = max(dangling - 0.5f, 0.0f) * 2.0f;
-      // overlap only if > 5%
-      overlap  = max(overlap - 0.05f, 0.0f) / 0.95f;
+      // stats
+      if (pos[2] > g_StatsHeightThres) {
+
+        dangling = danglingAt(max_th, pos, g_NozzleDiameter / 2.0f);
+        overlap  = overlapAt(th, pos, rs);
+
+        // dangling only if > 50%
+        dangling = max(dangling - 0.5f, 0.0f) * 2.0f;
+        // overlap only if > 10%
+        overlap  = max(overlap - 0.1f, 0.0f) / 0.9f;
+
+      }
+
+      // add segment to global length
+      g_GlobalDepositionLength += len;
 
       if (gpu_draw) {
         g_ShaderDeposition.u_height.set(pos[2]);
@@ -566,11 +617,33 @@ void step_simulation(bool gpu_draw)
       g_HeightSegments.push_back(seg);
     }
     g_PrevPos = pos;
+    // stats
+    if (g_InDangling && dangling == 0.0f) {
+      g_InDangling = false;
+      float dangling_len = (g_GlobalDepositionLength - g_InDanglingStart);
+      dangling_len = round(dangling_len / 0.1f); // quantize
+      g_DanglingHisto[(int)dangling_len] += 1.0f;
+    }
+    if (g_InOverlap && overlap == 0.0f) {
+      g_InOverlap = false;
+      float overlap_len = (g_GlobalDepositionLength - g_InOverlapStart);
+      overlap_len = round(overlap_len / 0.1f); // quantize
+      g_OverlapHisto[(int)overlap_len] += 1.0f;
+    }
+    if (!g_InDangling && dangling > 0.0f) {
+      g_InDangling = true;
+      g_InDanglingStart = g_GlobalDepositionLength;
+    }
+    if (!g_InOverlap && overlap > 0.0f) {
+      g_InOverlap = true;
+      g_InOverlapStart = g_GlobalDepositionLength;
+    }
+
 #if 1
     // height segments (with delay)
     auto S = g_HeightSegments.begin();
     while (S != g_HeightSegments.end()) {
-      if ( S->deplength + g_MmStep * 2.0f < g_GlobalDepositionLength
+      if ( S->deplength + max(g_NozzleDiameter,g_MmStep) * 2.0f < g_GlobalDepositionLength
         || max(S->a[2],S->b[2]) < pos[2]
         ) {
         rasterizeInHeightField(S->a, S->b, S->radius);
@@ -581,7 +654,9 @@ void step_simulation(bool gpu_draw)
       }
     }
 #endif
+
     if (done) break;
+
   } // iter
 }
 
@@ -940,7 +1015,8 @@ int main(int argc, const char **argv)
   g_GCode_string =
     loadFileIntoString(
     // "E:\\SLEFEBVR\\PROJECTS\\MODELS\\3DBenchy.stl.gcode"
-    "E:\\SLEFEBVR\\PROJECTS\\ALL\\accordion\\TMP\\knee2.gcode"
+    // "E:\\SLEFEBVR\\PROJECTS\\ALL\\accordion\\TMP\\knee2.gcode"
+    "D:\\Downloads\\3DBenchy.stl.gcode"
   );
   session_start();
 #endif
