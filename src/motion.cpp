@@ -4,97 +4,145 @@
 
 // --------------------------------------------------------------
 
-v4f   g_CurrentPos  = v4f(0);
-float g_CurrentFlow = 0.0f;
-float g_ConsumedE = 0.0f;
-float g_FilamentCrossArea = (float)M_PI * 1.75f * 1.75f;
+v4d    g_PrevGcodePos = v4d(0);
+v4d    g_CurrentPos   = v4d(0);
+double g_Current_EperXYZ = 0.0;
+double g_ConsumedE    = 0.0;
+double g_FilamentCrossArea = M_PI * 1.75 * 1.75;
 
 // --------------------------------------------------------------
 
-void  motion_start(float filament_diameter_mm)
+void  motion_start(double filament_diameter_mm)
 {
-  g_FilamentCrossArea = (float)M_PI * filament_diameter_mm * filament_diameter_mm / 4.0f;
-  g_CurrentPos = v4f(0);
-  g_CurrentFlow = 0.0f;
-  g_ConsumedE = 0.0f;
+  g_FilamentCrossArea = (double)M_PI * filament_diameter_mm * filament_diameter_mm / 4.0f;
+  g_PrevGcodePos = v4d(0);
+  g_CurrentPos = v4d(0);
+  g_Current_EperXYZ = 0.0;
+  g_ConsumedE  = 0.0;
   gcode_advance();
 }
 
 // --------------------------------------------------------------
 
-void motion_reset(float filament_diameter_mm)
+void motion_reset(double filament_diameter_mm)
 {
-  g_FilamentCrossArea = (float)M_PI * filament_diameter_mm * filament_diameter_mm / 4.0f;
-  g_CurrentPos = gcode_next_pos();
-  g_CurrentFlow = 0.0f;
-  g_ConsumedE = gcode_next_pos()[3];
+  g_FilamentCrossArea = (double)M_PI * filament_diameter_mm * filament_diameter_mm / 4.0f;
+  g_PrevGcodePos = gcode_next_pos();
+  g_CurrentPos = v4d(gcode_next_pos());
+  g_Current_EperXYZ = 0.0;
+  g_ConsumedE  = (double)gcode_next_pos()[3];
 }
 
 // --------------------------------------------------------------
 
-v4f   motion_get_current_pos()
+v4d   motion_get_current_pos()
 {
-  return g_CurrentPos;
+  return v4d(g_CurrentPos);
 }
 
 // --------------------------------------------------------------
 
-float motion_get_current_flow()
+double motion_get_current_e_per_xyz() // (ratio) mm / mm
 {
-  return g_CurrentFlow;
+  return g_Current_EperXYZ;
 }
 
 // --------------------------------------------------------------
 
-float motion_step(float delta_ms,bool& _done)
+static double e_per_xyz() // (ratio) mm / mm
 {
-  _done          = false;
-  bool advance   = false;
-  g_CurrentFlow  = 0.0f;
-  v3f delta_pos  = v3f(gcode_next_pos() - g_CurrentPos);
-  float len      = length(delta_pos);
-  float delta_e  = gcode_next_pos()[3] - g_CurrentPos[3];
-  float step_e   = 0.0f;
-  v3f   step_pos = 0.0f;
-  if (len < 1e-3f && fabs(delta_e) > 1e-3f) { 
+  double ln = length(v3d(gcode_next_pos()) - v3d(g_PrevGcodePos));
+  if (ln < 1e-6) {
+    return 0.0;
+  }
+  return (gcode_next_pos()[3] - g_PrevGcodePos[3]) / ln;
+}
+
+// --------------------------------------------------------------
+
+double motion_get_current_flow() // mm^3 / sec
+{
+  double ln = length(v3d(gcode_next_pos()) - v3d(g_PrevGcodePos));
+  double vl = (gcode_next_pos()[3] - g_PrevGcodePos[3]) * g_FilamentCrossArea;
+  if (gcode_speed() < 1) {
+    return 0.0f;
+  }
+  double tm = ln / gcode_speed();
+  if (tm < 1e-6f) {
+    return 0.0f;
+  }
+  return (double)(vl / tm);
+}
+
+// --------------------------------------------------------------
+
+double motion_step(double delta_ms,bool& _done)
+{
+  if (gcode_line() == 2378) {
+    std::cerr << "x";
+  }
+
+  _done           = false;
+  bool advance    = false;
+  v3d delta_pos   = v3d(gcode_next_pos()) - v3d(g_CurrentPos);
+  double len      = (double)length(delta_pos);
+  double delta_e  = (double)gcode_next_pos()[3] - g_CurrentPos[3];
+  double step_e   = 0.0;
+  v3d    step_pos = 0.0;
+
+  if (abs(len) < 1e-6 && abs(delta_e) > 1e-6) {
+
     // E motion only
     // do not overshot!
-    float len_step = delta_ms * gcode_speed() / 1000.0f;
-    if (len_step > fabs(delta_e)) {
+    double len_step = (double)delta_ms * (double)gcode_speed() / 1000.0;
+    if (len_step > abs(delta_e)) {
       advance = true;
       // adjust time step to reach exactly the target
-      delta_ms = fabs(delta_e) * 1000.0f / gcode_speed();
-      len_step = fabs(delta_e);
+      delta_ms = abs(delta_e) * 1000.0 / (double)gcode_speed();
+      len_step = abs(delta_e);
     }
     // update
     step_e = len_step * sign(delta_e);
-  } else { 
+
+  } else if (abs(len) > 1e-6) {
+
     // all axis motion
     // do not overshot!
-    float len_step = delta_ms * gcode_speed() / 1000.0f;
+    double len_step = (double)delta_ms * (double)gcode_speed() / 1000.0;
     if (len_step > len) {
       advance = true;
       // adjust time step to reach exactly the target
-      delta_ms = len * 1000.0f / gcode_speed();
+      delta_ms = len * 1000.0 / (double)gcode_speed();
       len_step = len;
     }
     // update
-    v3f dir  = normalize_safe(delta_pos);
-    step_pos = dir * len_step;
-    if (len > 1e-3f) {
-      step_e = delta_e * len_step / len;
-    }
+    v3d dir          = normalize_safe(delta_pos);
+    step_pos         = dir * len_step;
+    step_e           = len_step * e_per_xyz();
+
+  } else {
+    // only advance in gcode
+    advance  = true;
+    delta_ms = 0.0;
+    step_pos = 0.0;
+    step_e   = 0.0;
   }
-  if (g_CurrentPos[3] + step_e - g_ConsumedE > 0) {
-    float e_remain = min(g_CurrentPos[3] + step_e - g_ConsumedE, step_e);
-    g_CurrentFlow  = e_remain * g_FilamentCrossArea / delta_ms;
+  g_Current_EperXYZ = e_per_xyz();
+  if (advance) {
+    // snap to exact pos
+    g_CurrentPos = gcode_next_pos();
+  } else {
+    g_CurrentPos += v4d(step_pos, step_e);
   }
-  g_CurrentPos += v4f(step_pos, step_e);
-  g_ConsumedE   = max(g_ConsumedE, g_CurrentPos[3]);
+  g_ConsumedE = max(g_ConsumedE, g_CurrentPos[3]);
   // advance in gcode?
   if (advance) {
+    //std::cerr << 'a';
     // reached current gcode position, advance!
-    _done = !gcode_advance();
+    g_PrevGcodePos = gcode_next_pos();
+    _done          = !gcode_advance();
+  } else {
+    //std::cerr << '_';
   }
   return delta_ms;
 }

@@ -1,29 +1,29 @@
 
 // computes the volume of a sphere segment
 // see http://mathworld.wolfram.com/SphericalSegment.html
-float sphere_segment_volume(float r,float h1, float h2)
+double sphere_segment_volume(double r, double h1, double h2)
 {
   if (h1 > h2) std::swap(h1,h2);
-  float h = h2 - h1;
-  float a = r * sqrt(r*r - h1*h1);
-  float b = r * sqrt(r*r - h2*h2);
+  double h = h2 - h1;
+  double a = r * sqrt(r*r - h1*h1);
+  double b = r * sqrt(r*r - h2*h2);
   std::cout << " a = " << a << std::endl;
   std::cout << " b = " << b << std::endl;
-  float v = 1.0f/6.0f*(float)M_PI*h*(3.0*a*a+3.0*b*b+h*h);
+  double v = 1.0/6.0*(double)M_PI*h*(3.0*a*a+3.0*b*b+h*h);
   return v;
 }
 
 // computes the volume of a sphere cap
 // h is height from sphere top
 // see http://mathworld.wolfram.com/SphericalSegment.html
-float sphere_cap_volume(float r,float h)
+double sphere_cap_volume(double r, double h)
 {  
-  return (1.0f/3.0f)*(float)M_PI*h*h*(3.0f*r-h);
+  return (1.0/3.0)*(float)M_PI*h*h*(3.0*r-h);
 }
 
-float sphere_volume(float r)
+double sphere_volume(double r)
 {
-  return (4.0f/3.0f)*(float)M_PI*r*r*r;
+  return (4.0/3.0)*(double)M_PI*r*r*r;
 }
 
 // finds the radius giving the same volume to a squashed
@@ -45,14 +45,14 @@ float sphere_squashed_radius(float r,float h)
 }
 
 // area of a disk
-float disk_area(float r)
+double disk_area(double r)
 {
-  return (float)M_PI*r*r;
+  return M_PI*r*r;
 }
 
 // area of a disk cap, height from top
 // http://mathworld.wolfram.com/CircularSegment.html
-float disk_cap_area(float r,float h)
+double disk_cap_area(double r, double h)
 {
   return r*r*acos((r-h)/r) - (r-h)*sqrt(2*r*h-h*h);
 }
@@ -60,16 +60,16 @@ float disk_cap_area(float r,float h)
 // finds the radius giving the same area to a squashed
 // disk (clipped at h, where h is height from center) 
 // as the area of the disk of radius r
-float disk_squashed_radius(float r, float h)
+double disk_squashed_radius(double r, double h)
 {
   // we search for rs such that:
   // disk_area(rs) - disk_cap_area(rs,rs-h)*2 == disk_area(r)
-  float L = 0.0f;
-  float R = r * 10.0f; // assume this is enough?
-  float aT = disk_area(r);
-  while (fabs(L-R)>1e-6f) {
-    float m = (L + R)*0.5f;
-    float a = disk_area(m) - disk_cap_area(m, m - h) * 2;
+  double L = 0.0;
+  double R = r * 10.0; // assume this is enough?
+  double aT = disk_area(r);
+  while (fabs(L-R)>1e-6) {
+    double m = (L + R)*0.5;
+    double a = disk_area(m) - disk_cap_area(m, m - h) * 2.0;
     if (a > aT) {
       R = m;
     } else {

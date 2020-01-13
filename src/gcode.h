@@ -11,10 +11,10 @@ void gcode_start(const char *gcode);
 bool gcode_advance();
 
 // returns the next position to reach (x,y,z,e)
-v4f  gcode_next_pos();
+v4d  gcode_next_pos();
 
 // returns the speed in mm/sec
-float gcode_speed();
+double gcode_speed();
 
 // returns the current extruder
 int gcode_extruder();

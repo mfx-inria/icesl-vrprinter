@@ -12,13 +12,13 @@ typedef AutoPtr<t_parser> t_parser_ptr;
 t_stream_ptr g_Stream;
 t_parser_ptr g_Parser;
 
-v4f         g_Pos(0.0f);
-v4f         g_Offset(0.0f);
-float       g_Speed = 20.0f;
-int         g_Extruder = 0;
-int         g_Line = 0;
-const char *g_GCode = NULL;
-bool        g_GCodeError = false;
+v4d          g_Pos(0.0);
+v4d          g_Offset(0.0);
+double       g_Speed = 20.0;
+int          g_Extruder = 0;
+int          g_Line = 0;
+const char  *g_GCode = NULL;
+bool         g_GCodeError = false;
 
 // --------------------------------------------------------------
 
@@ -63,6 +63,8 @@ bool gcode_advance()
     if (c == 'g') {
       int n = g_Parser->readInt();
       if (n == 0 || n == 1) { // G0 G1
+        //v4d pos_before = g_Pos;
+        //double e_raw   = 0.0f;
         while (!g_Parser->eof()) {
           c = g_Parser->readChar();
           if (c == '\n') break;
@@ -71,11 +73,12 @@ bool gcode_advance()
             break;
           }
           c = tolower(c);
-          float f = g_Parser->readFloat();
+          double f = g_Parser->readDouble();
           if (c >= 'x' && c <= 'z') {
             g_Pos[c - 'x'] = f + g_Offset[c - 'x'];
           } else if (c == 'e') {
             g_Pos[3] = f + g_Offset[3];
+            //e_raw    = f;
           } else if (c == 'f') {
             g_Speed = f / 60.0f;
           } else if (c >= 'a' && c <= 'f') {
@@ -85,13 +88,24 @@ bool gcode_advance()
             return false;
           }
         }
+        // flow check (DEBUG)
+        /*
+        double ln = length(v3d(g_Pos) - v3d(pos_before));
+        if (ln > 1e-6f) {
+          double ex = g_Pos[3] - pos_before[3];
+          std::cerr << ex / ln << ' ';
+          if (ex / ln > 0.3f) {
+            std::cerr << ex / ln << ' ';
+          }
+        }
+        */
         break; // done advancing
       } else if (n == 92) { // G92
         while (!g_Parser->eof()) {
           c = g_Parser->readChar();
           if (c == '\n') break;
           c = tolower(c);
-          float f = g_Parser->readFloat();
+          double f = g_Parser->readDouble();
           if (c >= 'x' && c <= 'z') {
             g_Offset[c - 'x'] = g_Pos[c - 'x'] - f;
           } else if (c == 'e') {
@@ -133,14 +147,14 @@ bool gcode_advance()
 
 // --------------------------------------------------------------
 
-v4f gcode_next_pos()
+v4d gcode_next_pos()
 {
   return g_Pos;
 }
 
 // --------------------------------------------------------------
 
-float gcode_speed()
+double gcode_speed()
 {
   return g_Speed;
 }

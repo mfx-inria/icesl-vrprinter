@@ -24,6 +24,10 @@ LIBSL_WIN32_FIX;
 
 // ----------------------------------------------------------------
 
+#include <tclap/CmdLine.h>
+
+// ----------------------------------------------------------------
+
 #include "bed.h"
 #include "shapes.h"
 #include "gcode.h"
@@ -51,25 +55,28 @@ float         g_FilamentDiameter = 1.75f;
 float         g_NozzleDiameter   = 0.4f;
 const float   c_HeightFieldStep  = 0.04f; // mm
 
+const float   c_ThicknessEpsilon = 0.001f; // 1 um
+
 float         g_StatsHeightThres = 1.2f; // mm, ignored everything below regarding overlaps and dangling
 
-float         g_MmStep = 0.001f;
-int           g_StartAtLine = 4000;
+float         g_MmStep      = c_HeightFieldStep;
+int           g_StartAtLine = 0;
+int           g_LastLine    = 0;
 
-float         g_GlobalDepositionLength = 0.0f;
+double        g_GlobalDepositionLength = 0.0;
 
 bool          g_ColorOverhangs = true;
 
 bool          g_InDangling = false;
-float         g_InDanglingStart = 0.0;
+double        g_InDanglingStart = 0.0;
 std::map<int, float> g_DanglingHisto;
 
 bool          g_InOverlap = false;
-float         g_InOverlapStart = 0.0;
+double        g_InOverlapStart = 0.0;
 std::map<int, float> g_OverlapHisto;
 
 bool          g_DumpHeightField = false;
-float         g_DumpHeightFieldStartLen = 0.0f;
+double        g_DumpHeightFieldStartLen = 0.0;
 
 std::string   g_GCode_string;
 
@@ -97,14 +104,14 @@ bool   g_Dragging = false;
 float  g_Zoom = 1.0f;
 float  g_ZoomTarget = 1.0f;
 
-std::vector<v3f>                 g_Trajectory;
+std::vector<v3d>                 g_Trajectory;
 
 typedef struct
 {
-  float deplength;
-  float radius;
-  v3f   a;
-  v3f   b;
+  double deplength;
+  double radius;
+  v3d   a;
+  v3d   b;
 } t_height_segment;
 
 std::list<t_height_segment> g_HeightSegments;
@@ -113,7 +120,7 @@ AAB<3>                   g_HeightFieldBox;
 
 Array2D<Tuple<float,1> > g_HeightField;
 
-v3f    g_PrevPos(0.0f);
+v3d    g_PrevPos(0.0);
 
 bool   g_ForceRedraw = true;
 bool   g_ForceClear  = false;
@@ -173,12 +180,12 @@ void addBar(AutoPtr<T_Mesh> gpumesh, v3f a, v3f b, pair<v3f, v3f> uv, float sz =
 void printer_reset()
 {
   gcode_reset();
-  g_PrevPos      = v3f(0.0f);
+  g_PrevPos      = v3d(0.0);
   g_Trajectory    .clear();
   g_HeightSegments.clear();
   g_GlobalDepositionLength = 0.0f;
-  float prev_z   = 0.0f;
-  float curr_z   = 0.0f;
+  double prev_z   = 0.0;
+  double curr_z   = 0.0;
   while (gcode_line() < g_StartAtLine) {
     gcode_advance();
     if (gcode_next_pos()[2] > curr_z) {
@@ -186,7 +193,7 @@ void printer_reset()
       curr_z = gcode_next_pos()[2];
     }
   }
-  g_HeightField.fill(prev_z);
+  g_HeightField.fill((float)prev_z);
   motion_reset(g_FilamentDiameter);
   // stats
   g_InDangling = false;
@@ -207,10 +214,12 @@ void session_start()
       g_HeightFieldBox.addPoint(v3f(gcode_next_pos()));
     }
   }
+  g_LastLine = gcode_line();
+  cerr << "gcode has " << g_LastLine << " line(s)" << endl;
   gcode_reset();
   // height field
-  int hszx = ceil(g_HeightFieldBox.extent()[0] / c_HeightFieldStep);
-  int hszy = ceil(g_HeightFieldBox.extent()[1] / c_HeightFieldStep);
+  int hszx = (int)ceil(g_HeightFieldBox.extent()[0] / c_HeightFieldStep);
+  int hszy = (int)ceil(g_HeightFieldBox.extent()[1] / c_HeightFieldStep);
   cerr << "Allocated height field " << printByteSize(hszx * hszy * sizeof(float)) << endl;
   g_HeightField.allocate(hszx, hszy);
   // reset printer
@@ -267,7 +276,7 @@ void ImGuiPanel()
       ImGui::End();
     }
     ImGui::SetNextWindowPos(ImVec2(0, 0), ImGuiSetCond_Once);
-    ImGui::SetNextWindowSize(ImVec2(g_UIWidth, 750), ImGuiSetCond_Once);
+    ImGui::SetNextWindowSize(ImVec2((float)g_UIWidth, 750), ImGuiSetCond_Once);
     ImGui::Begin("Virtual 3D printer");
     ImGui::PushItemWidth(200);
 
@@ -280,6 +289,7 @@ void ImGuiPanel()
       ImGui::InputFloat("Nozzle diameter", &nozzleDiameter, 0.0f, 0.0f, 3);
       g_NozzleDiameter = clamp(nozzleDiameter, c_HeightFieldStep * 2.0f, 10.0f);
       ImGui::InputInt("Start at GCode line", &g_StartAtLine);
+      g_StartAtLine = max(0, min(g_StartAtLine, g_LastLine - 1));
       if (ImGui::Button("Reset")) {
         g_NozzleDiameter = nozzleDiameter;
         printer_reset();
@@ -306,10 +316,12 @@ void ImGuiPanel()
     if (ImGui::CollapsingHeader("Status")) {
       int line = gcode_line();
       ImGui::InputInt("GCode line", &line);
-      ImGui::InputFloat3("XYZ (mm)", &motion_get_current_pos()[0]);
+      static v3f pos;
+      pos = v3f(motion_get_current_pos());
+      ImGui::InputFloat3("XYZ (mm)", &pos[0]);
       // flow graph
-      float flow = motion_get_current_flow() * 1000.0f;
-      g_FlowsSample += flow;
+      double flow = motion_get_current_flow() * 1000.0;
+      g_FlowsSample += (float)flow;
       g_FlowsCount++;
       if (g_FlowsCount == 32) {
         g_FlowsSample /= (float)g_FlowsCount;
@@ -318,9 +330,9 @@ void ImGuiPanel()
         g_FlowsCount = 0;
         g_FlowsSample = 0.0f;
       }
-      ImGui::PlotLines("Flow (mm^3/sec)", &g_Flows[0], g_Flows.size());
+      ImGui::PlotLines("Flow (mm^3/sec)", &g_Flows[0], (int)g_Flows.size());
       // speed graph
-      float speed = gcode_speed();
+      float speed = (float)gcode_speed();
       g_SpeedsSample += speed;
       g_SpeedsCount++;
       if (g_SpeedsCount == 32) {
@@ -330,7 +342,7 @@ void ImGuiPanel()
         g_SpeedsCount  = 0;
         g_SpeedsSample = 0.0f;
       }
-      ImGui::PlotLines("Speed (mm/sec)", &g_Speeds[0], g_Speeds.size());
+      ImGui::PlotLines("Speed (mm/sec)", &g_Speeds[0], (int)g_Speeds.size());
       // dangling histogram
       {
         static std::vector<float> histo; /// oh this is ugly, very ugly
@@ -342,7 +354,7 @@ void ImGuiPanel()
         for (auto h : g_DanglingHisto) {
           histo[h.first] = h.second;
         }
-        ImGui::PlotHistogram("dangling (red) ", &histo[0], histo.size());
+        ImGui::PlotHistogram("dangling (red) ", &histo[0], (int)histo.size());
       }
       // overlap histogram
       {
@@ -355,7 +367,7 @@ void ImGuiPanel()
         for (auto h : g_OverlapHisto) {
           histo[h.first] = h.second;
         }
-        ImGui::PlotHistogram("overlaps (blue)", &histo[0], histo.size());
+        ImGui::PlotHistogram("overlaps (blue)", &histo[0], (int)histo.size());
       }
     }
     ImGui::End();
@@ -403,7 +415,7 @@ string jsEncodeString(const char *strin)
 
 void rasterizeDiskInHeightField(const v2i& p,float z,float r)
 {
-  int N = round(r / c_HeightFieldStep);
+  int N = (int)round(r / c_HeightFieldStep);
   ForRange(nj, -N, N) {
     ForRange(ni, -N, N) {
       if (ni * ni + nj * nj < N*N) {
@@ -414,15 +426,15 @@ void rasterizeDiskInHeightField(const v2i& p,float z,float r)
   }
 }
 
-void rasterizeInHeightField(const v3f& a, const v3f&b, float r)
+void rasterizeInHeightField(v3f a, const v3f&b, float r)
 {
   v3f cur(a);
   v3f step = v3f(b - a);
   float len = length(v2f(step));
   if (len < 1e-6f) {
     v2i p = v2i(
-      round((a[0] - g_HeightFieldBox.minCorner()[0]) / c_HeightFieldStep), 
-      round((a[1] - g_HeightFieldBox.minCorner()[1]) / c_HeightFieldStep));
+      (int)round((a[0] - g_HeightFieldBox.minCorner()[0]) / c_HeightFieldStep), 
+      (int)round((a[1] - g_HeightFieldBox.minCorner()[1]) / c_HeightFieldStep));
     rasterizeDiskInHeightField(p, max(a[2],b[2]), r);
     return;
   }
@@ -430,25 +442,27 @@ void rasterizeInHeightField(const v3f& a, const v3f&b, float r)
   float l = 0.0f;
   while (l < len) {
     v2i p = v2i(
-      round((cur[0] - g_HeightFieldBox.minCorner()[0]) / c_HeightFieldStep), 
-      round((cur[1] - g_HeightFieldBox.minCorner()[1]) / c_HeightFieldStep));
+      (int)round((cur[0] - g_HeightFieldBox.minCorner()[0]) / c_HeightFieldStep),
+      (int)round((cur[1] - g_HeightFieldBox.minCorner()[1]) / c_HeightFieldStep));
     rasterizeDiskInHeightField(p, cur[2], r);
     cur += step * c_HeightFieldStep;
     l   += c_HeightFieldStep;
   }
 }
 
-float heightAt(const v3f& a, float r)
+float heightAt(v3f a, float r)
 {
   float h = 0.0f;
   int   N = max(1,round(r / c_HeightFieldStep));
-  v2i p = v2i(
-    round((a[0] - g_HeightFieldBox.minCorner()[0]) / c_HeightFieldStep),
-    round((a[1] - g_HeightFieldBox.minCorner()[1]) / c_HeightFieldStep));
+  v2i   p = v2i(
+    (int)round((a[0] - g_HeightFieldBox.minCorner()[0]) / c_HeightFieldStep),
+    (int)round((a[1] - g_HeightFieldBox.minCorner()[1]) / c_HeightFieldStep));
   ForRange(nj, -N, N) {
     ForRange(ni, -N, N) {
-      float v = g_HeightField.at<Clamp>(p[0] + ni, p[1] + nj)[0];
-      h       = max(h, v);
+        float v = g_HeightField.at<Clamp>(p[0] + ni, p[1] + nj)[0];
+        if (v < a[2] - c_ThicknessEpsilon) { // ignore values at same height, these are due to aliasing
+          h = max(h, v);
+        }
     }
   }
   return h;
@@ -460,8 +474,8 @@ float danglingAt(float max_th,const v3f &a, float r)
   int   N = max(1, round(r / c_HeightFieldStep));
   int num = 0;
   v2i p = v2i(
-    round((a[0] - g_HeightFieldBox.minCorner()[0]) / c_HeightFieldStep),
-    round((a[1] - g_HeightFieldBox.minCorner()[1]) / c_HeightFieldStep));
+    (int)round((a[0] - g_HeightFieldBox.minCorner()[0]) / c_HeightFieldStep),
+    (int)round((a[1] - g_HeightFieldBox.minCorner()[1]) / c_HeightFieldStep));
   ForRange(nj, -N, N) {
     ForRange(ni, -N, N) {
       if (ni * ni + nj * nj < N * N) {
@@ -482,8 +496,8 @@ float overlapAt(float th, const v3f &a, float r)
   int   N = max(1, round(r / c_HeightFieldStep));
   int num = 0;
   v2i   p = v2i(
-    round((a[0] - g_HeightFieldBox.minCorner()[0]) / c_HeightFieldStep),
-    round((a[1] - g_HeightFieldBox.minCorner()[1]) / c_HeightFieldStep));
+    (int)round((a[0] - g_HeightFieldBox.minCorner()[0]) / c_HeightFieldStep),
+    (int)round((a[1] - g_HeightFieldBox.minCorner()[1]) / c_HeightFieldStep));
   ForRange(nj, -N, N) {
     ForRange(ni, -N, N) {
       if (ni * ni + nj * nj < N * N) {
@@ -518,23 +532,32 @@ m4x4f alignAlongSegment(const v3f& p0, const v3f& p1)
 
 // ----------------------------------------------------------------
 
-void step_simulation(bool gpu_draw)
+bool step_simulation(bool gpu_draw)
 {
   float raster_erode = c_HeightFieldStep * sqrt(2.0f);
 
-  float tmstep  = g_MmStep / (gcode_speed() / 1000.0f);
-  float step_ms = tmstep;
+  double tmstep  = (double)g_MmStep / (gcode_speed() / 1000.0);
+  double step_ms = tmstep;
   while (step_ms > 0.0f) {
+    
     // step motion
-    bool done;
-    float delta_ms = motion_step(step_ms, done);
+    bool  done;
+    double delta_ms = motion_step(step_ms, done);
+    // accumulate step time
+    step_ms -= delta_ms;
+
+    if (done) {
+      return true;
+    }
+
     if (gcode_error()) {
 #ifdef EMSCRIPTEN
       std::string command = "errorLine(" + to_string(gcode_line()) + ");";
       emscripten_run_script(command.c_str());
 #endif
+      return true;
     }
-    step_ms -= delta_ms;
+
     // line highlighting
 #ifdef EMSCRIPTEN
     static int last_line = -1;
@@ -545,13 +568,13 @@ void step_simulation(bool gpu_draw)
     }
 #endif
     // pushed material volume during time interval
-    float vf = motion_get_current_flow() * delta_ms; // recover pushed mm^3
-    v3f pos  = v3f(motion_get_current_pos());
-    float h  = heightAt(pos, g_NozzleDiameter / 2.0f);
+    v3d pos   = v3d(motion_get_current_pos());
+    float h   = heightAt(v3f(pos), g_NozzleDiameter / 2.0f);
 
-    static float th_prev = 0.0f;
-    float th = pos[2] - h;
-    if (th < 1e-6f) {
+    static double th_prev = 0.0;
+    double th = pos[2] - h;
+    if (th < c_ThicknessEpsilon) {
+      // cerr << 'e';
       th = th_prev;
     } else {
       th_prev = th;
@@ -559,19 +582,29 @@ void step_simulation(bool gpu_draw)
 
     g_Trajectory.push_back(pos);
 
-    float len      = length(pos - g_PrevPos);
+    double len     = length(pos - g_PrevPos);
     float dangling = 0.0f;
     float overlap  = 0.0f;
 
-    if (vf > 0.0f) {
+    std::cerr << gcode_line() << std::endl;
+
+    if (len > 1e-6) {
+      
+      std::cerr << 'x';
 
       // print move
 
-      float sa       = vf / len;
-      float r        = sqrt(sa / (float)M_PI); // sa = pi*r^2
-      float squash_t = min(th / 2.0f, r);
-      float rs       = disk_squashed_radius(r, squash_t);
-      float max_th   = vf / len / g_NozzleDiameter;
+      double cs       = M_PI * g_FilamentDiameter * g_FilamentDiameter / 4.0f; // mm^2
+      double sa       = motion_get_current_e_per_xyz() * cs;   // vf / len;
+      double r        = sqrt(sa / M_PI); // sa = pi*r^2
+      double squash_t = min(th / 2.0, r);
+      double rs       = disk_squashed_radius(r, squash_t);
+      double max_th   = motion_get_current_e_per_xyz() * cs / g_NozzleDiameter;
+
+      if (rs > 0.3f) {
+        std::cerr << sprint("z %.6f th %.6f th_prev %.6f rs %.6f \n", (float)pos[2], (float)th, (float)th_prev, (float)rs);
+        sl_assert(false);
+      }
 
       /// /////////////////////////////////////////
       // fixed th and radius
@@ -583,11 +616,11 @@ void step_simulation(bool gpu_draw)
       // stats
       if (pos[2] > g_StatsHeightThres) {
 
-        dangling = danglingAt(max_th, pos, g_NozzleDiameter / 2.0f - raster_erode);
-        overlap  = overlapAt(th, pos, rs - raster_erode);
+        dangling = danglingAt((float)max_th, v3f(pos), (float)rs);
+        overlap  = overlapAt((float)th, v3f(pos), (float)rs - raster_erode);
 
-        // dangling only if > 50%
-        dangling = max(dangling - 0.5f, 0.0f) * 2.0f;
+        // dangling only if > 60%
+        dangling = max(dangling - 0.6f, 0.0f) / 0.4f;
         // overlap only if > 40%
         overlap  = max(overlap - 0.4f, 0.0f) / 0.6f;
 
@@ -597,30 +630,30 @@ void step_simulation(bool gpu_draw)
       g_GlobalDepositionLength += len;
 
       if (gpu_draw) {
-        g_ShaderDeposition.u_height.set(pos[2]);
-        g_ShaderDeposition.u_thickness.set(th);
-        g_ShaderDeposition.u_radius.set(r);
+        g_ShaderDeposition.u_height.set((float)pos[2]);
+        g_ShaderDeposition.u_thickness.set((float)th);
+        g_ShaderDeposition.u_radius.set((float)r);
         g_ShaderDeposition.u_dangling.set(dangling);
         g_ShaderDeposition.u_overlap.set(overlap);
         g_ShaderDeposition.u_extruder.set(0.25f + 0.75f * gcode_extruder());
         // add cylinder from previous
         g_ShaderDeposition.u_model.set(
-          translationMatrix(v3f(0, 0, -squash_t))
+          translationMatrix(v3f(0, 0, -(float)squash_t))
           * alignAlongSegment(v3f(g_PrevPos), v3f(pos))
-          * scaleMatrix(v3f(rs, rs, 1))
+          * scaleMatrix(v3f((float)rs, (float)rs, 1))
         );
         g_GPUMesh_cylinder->render();
         // add spheres
         g_ShaderDeposition.u_model.set(
-          translationMatrix(g_PrevPos)
-          * translationMatrix(v3f(0, 0, -squash_t))
-          * scaleMatrix(v3f(rs))
+          translationMatrix(v3f(g_PrevPos))
+          * translationMatrix(v3f(0, 0, -(float)squash_t))
+          * scaleMatrix(v3f((float)rs))
         );
         g_GPUMesh_sphere->render();
         g_ShaderDeposition.u_model.set(
-          translationMatrix(pos)
-          * translationMatrix(v3f(0, 0, -squash_t))
-          * scaleMatrix(v3f(rs))
+          translationMatrix(v3f(pos))
+          * translationMatrix(v3f(0, 0, -(float)squash_t))
+          * scaleMatrix(v3f((float)rs))
         );
         g_GPUMesh_sphere->render();
       }
@@ -637,21 +670,21 @@ void step_simulation(bool gpu_draw)
     // stats
     if (g_InDangling && dangling == 0.0f) {
       g_InDangling = false;
-      float dangling_len = (g_GlobalDepositionLength - g_InDanglingStart);
-      dangling_len = round(dangling_len / 0.1f); // quantize
+      double dangling_len = (g_GlobalDepositionLength - g_InDanglingStart);
+      dangling_len = round(dangling_len / 0.1); // quantize
       g_DanglingHisto[(int)dangling_len] += 1.0f;
     }
     if (g_InOverlap && overlap == 0.0f) {
       g_InOverlap = false;
-      float overlap_len = (g_GlobalDepositionLength - g_InOverlapStart);
-      overlap_len = round(overlap_len / 0.1f); // quantize
+      double overlap_len = (g_GlobalDepositionLength - g_InOverlapStart);
+      overlap_len = round(overlap_len / 0.1); // quantize
       g_OverlapHisto[(int)overlap_len] += 1.0f;
     }
-    if (!g_InDangling && dangling > 0.0f) {
+    if (!g_InDangling && dangling > 0.0) {
       g_InDangling = true;
       g_InDanglingStart = g_GlobalDepositionLength;
     }
-    if (!g_InOverlap && overlap > 0.0f) {
+    if (!g_InOverlap && overlap > 0.0) {
       g_InOverlap = true;
       g_InOverlapStart = g_GlobalDepositionLength;
     }
@@ -660,10 +693,10 @@ void step_simulation(bool gpu_draw)
     // height segments (with delay)
     auto S = g_HeightSegments.begin();
     while (S != g_HeightSegments.end()) {
-      if ( S->deplength + max(g_NozzleDiameter,g_MmStep) * 4.0f < g_GlobalDepositionLength
-        || max(S->a[2],S->b[2]) < pos[2]
+      if ( S->deplength + max((double)g_NozzleDiameter,g_MmStep) * 4.0 < g_GlobalDepositionLength
+        || max(S->a[2],S->b[2]) + c_ThicknessEpsilon < pos[2]
         ) {
-        rasterizeInHeightField(S->a, S->b, S->radius /*- raster_erode*/); // uncomment to visualize raster erode
+        rasterizeInHeightField(v3f(S->a), v3f(S->b), (float)S->radius /*- raster_erode*/); // uncomment to visualize raster erode
         S = g_HeightSegments.erase(S);
       } else {
         // S++;
@@ -672,9 +705,8 @@ void step_simulation(bool gpu_draw)
     }
 #endif
 
-    if (done) break;
-
   } // iter
+  return false;
 }
 
 // ----------------------------------------------------------------
@@ -795,10 +827,10 @@ void mainRender()
       g_ShaderSimple.u_projection.set(proj);
       g_ShaderSimple.u_view.set(view);
       g_ShaderSimple.u_color.set(v4f(0, 1, 0, 1));
-      v3f prev = g_Trajectory.front();
+      v3d prev = g_Trajectory.front();
       ForRange(t, 1, (int)g_Trajectory.size() - 1) {
         g_ShaderSimple.u_alpha.set(t / (float)((int)g_Trajectory.size() - 1));
-        v3f pos = g_Trajectory[t];
+        v3d pos = g_Trajectory[t];
         // draw cylinder
         g_ShaderSimple.u_view.set(
           view
@@ -1023,8 +1055,8 @@ int main(int argc, const char **argv)
   g_GPUMesh_cylinder = AutoPtr<MeshRenderer<mvf_mesh> >(new MeshRenderer<mvf_mesh>(shape_cylinder(1.0f, 1.0f, 1.0f, 12)));
 
   /// default view
-  TrackballUI::trackball().set(v3f(-g_BedSize[0]/2.0, -g_BedSize[1] / 2.0,-300.0f), v3f(0), quatf(v3f(1, 0, 0), -1.0f)*quatf(v3f(0, 0, 1), 0.0f));
-  TrackballUI::trackball().setCenter(v3f(g_BedSize[0] / 2.0, g_BedSize[1] / 2.0, 10.0f));
+  TrackballUI::trackball().set(v3f(-g_BedSize[0]/2.0f, -g_BedSize[1] / 2.0f,-300.0f), v3f(0), quatf(v3f(1, 0, 0), -1.0f)*quatf(v3f(0, 0, 1), 0.0f));
+  TrackballUI::trackball().setCenter(v3f(g_BedSize[0] / 2.0f, g_BedSize[1] / 2.0f, 10.0f));
   TrackballUI::trackball().setBallSpeed(0.0f);
   TrackballUI::trackball().setAllowRoll(false);
   TrackballUI::trackball().setUp(Trackball::Z_neg);
@@ -1041,13 +1073,55 @@ int main(int argc, const char **argv)
     emscripten_run_script(command.c_str());
   }
 #else
-  g_GCode_string =
-    loadFileIntoString(
-    "E:\\SLEFEBVR\\PROJECTS\\MODELS\\3DBenchy.stl.gcode"
-    // "E:\\SLEFEBVR\\PROJECTS\\ALL\\accordion\\TMP\\knee2.gcode"
-    // "D:\\Downloads\\3DBenchy.stl.gcode"
-  );
+
+  // E:\SLEFEBVR\PROJECTS\MODELS\3DBenchy.stl.gcode --stats
+  // E:\SLEFEBVR\PROJECTS\ALL\accordion\TMP\knee2.gcode
+  // "D:\\Downloads\\3DBenchy.stl.gcode"
+
+  TCLAP::CmdLine   cmd("", ' ', "1.0");
+  TCLAP::UnlabeledValueArg<std::string> gcArg("gcode", "gcode to load", true, "", "filename");
+  TCLAP::SwitchArg statsArg("s", "stats", "compute stats and return");
+
+  cmd.add(gcArg);
+  cmd.add(statsArg);
+  cmd.parse(argc, argv);
+
+  g_GCode_string = loadFileIntoString(gcArg.getValue().c_str());
+
   session_start();
+
+  if (statsArg.isSet()) {
+
+    Console::progressTextInit(g_LastLine);
+    while (!step_simulation(false)) { 
+      Console::progressTextUpdate(gcode_line());
+    }
+    Console::progressTextEnd();
+
+    Histogram hd;
+    for (auto h : g_DanglingHisto) {
+      ForIndex(i, h.second) { // totally stupid loop, but hey, no consequence and we reuse what we have
+        hd << h.first;
+      }
+    }
+    Histogram ho;
+    for (auto h : g_OverlapHisto) {
+      ForIndex(i, h.second) { // totally stupid loop, but hey, no consequence and we reuse what we have
+        ho << h.first;
+      }
+    }
+
+    std::cerr << "== unsupported ==" << std::endl;
+    hd.print();
+    std::cerr << "==  overlaps   ==" << std::endl;
+    ho.print();
+
+    //exit(0);
+
+    // printer_reset();
+
+  }
+
 #endif
   motion_start( g_FilamentDiameter );
 

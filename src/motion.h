@@ -4,18 +4,21 @@
 #include <LibSL.h>
 
 // start motion, assumes gcode is ready (gcode_start has been called)
-void  motion_start(float filament_diameter_mm);
+void  motion_start(double filament_diameter_mm);
 
 // returns the current pos
-v4f   motion_get_current_pos();
+v4d   motion_get_current_pos();
 
 // returns the current (instantaneaous) flow
 // mm^3 per milliseconds
-float motion_get_current_flow();
+double motion_get_current_flow();
+
+// returns the current (instantaneaous) ratio in E and XYZ axes
+double motion_get_current_e_per_xyz();
 
 // performs the next motion step, takes as input the step in milliseconds
 // returns the consumed time (may be less than delta_ms)
-float motion_step(float delta_ms,bool& _done);
+double motion_step(double delta_ms,bool& _done);
 
 // restarts from scratch
-void motion_reset(float filament_diameter_mm);
+void motion_reset(double filament_diameter_mm);
