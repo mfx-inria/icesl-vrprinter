@@ -538,6 +538,147 @@ m4x4f alignAlongSegment(const v3f& p0, const v3f& p1)
 
 // ----------------------------------------------------------------
 
+class GPUBead
+{
+private:
+
+  bool m_Empty = true;
+  bool m_HasPrev = false;
+
+  // last drawn point
+  float m_LastOverlap = 0.0f;
+  float m_LastDangling = 0.0f;
+  float m_LastTh = 0.0f;
+  float m_LastRadius = 0.0f;
+  v3f   m_LastPos;
+
+  // previous (not drawn) point
+  float m_PrevOverlap  = 0.0f;
+  float m_PrevDangling = 0.0f;
+  float m_PrevTh = 0.0f;
+  float m_PrevRadius = 0.0f;
+  v3f   m_PrevPos;
+
+  void drawSegment(v3f a,v3f b,float th,float r,float dg,float ov)
+  {
+    double squash_t = min(th / 2.0, r);
+    double rs = disk_squashed_radius(r, squash_t);
+    g_ShaderDeposition.u_height.set((float)b[2]);
+    g_ShaderDeposition.u_thickness.set((float)th);
+    g_ShaderDeposition.u_radius.set((float)r);
+    g_ShaderDeposition.u_dangling.set(dg);
+    g_ShaderDeposition.u_overlap.set(ov);
+    g_ShaderDeposition.u_extruder.set(0);
+    // add cylinder from previous
+    g_ShaderDeposition.u_model.set(
+      translationMatrix(v3f(0, 0, -(float)squash_t))
+      * alignAlongSegment(v3f(a), v3f(b))
+      * scaleMatrix(v3f((float)rs, (float)rs, 1))
+    );
+    g_GPUMesh_cylinder->render();
+    // add spheres
+    g_ShaderDeposition.u_model.set(
+      translationMatrix(v3f(a))
+      * translationMatrix(v3f(0, 0, -(float)squash_t))
+      * scaleMatrix(v3f((float)rs))
+    );
+    g_GPUMesh_sphere->render();
+    g_ShaderDeposition.u_model.set(
+      translationMatrix(v3f(b))
+      * translationMatrix(v3f(0, 0, -(float)squash_t))
+      * scaleMatrix(v3f((float)rs))
+    );
+    g_GPUMesh_sphere->render();
+  }
+
+public:
+
+  GPUBead() 
+  {
+    m_Empty = true;
+    m_HasPrev = false;
+  }
+
+  void drawPoint(v3f p, float th, float r, float dg, float ov)
+  {
+    // draw segment
+    drawSegment(m_LastPos, p, th, r, dg, ov);
+    // record as last drawn
+    m_LastOverlap = ov;
+    m_LastDangling = dg;
+    m_LastTh = th;
+    m_LastRadius = r;
+    m_LastPos = p;
+  }
+
+  void addPoint(v3f p, float th, float r, float dg,float ov)
+  {
+    if (m_Empty) {
+
+      m_Empty = false;
+      // record as last drawn
+      m_LastOverlap = ov;
+      m_LastDangling = dg;
+      m_LastTh = th;
+      m_LastRadius = r;
+      m_LastPos = p;
+
+    } else {
+
+      if (!m_HasPrev) {
+        // start
+        m_HasPrev = true;
+        // record as prev
+        m_PrevOverlap = ov;
+        m_PrevDangling = dg;
+        m_PrevTh = th;
+        m_PrevRadius = r;
+        m_PrevPos = p;
+      } else {
+        // shall we draw the previous point or skip it?
+        float delta_th = abs(m_PrevTh - th);
+        float delta_dg = abs(m_PrevDangling - dg);
+        float delta_ov = abs(m_PrevOverlap - ov);
+        float delta_rd = abs(m_PrevRadius - r);
+        float dot_dir  = abs(dot(
+          normalize_safe(p - m_PrevPos),
+          normalize_safe(m_PrevPos-m_LastPos))
+        );
+        if (false
+          || delta_th > 1e-2f
+          || delta_dg > 0.01f
+          || delta_ov > 0.01f
+          || delta_rd > 0.01f
+          || dot_dir < 1.0f - 1e-4f) {
+          // draw previous point
+          drawPoint(m_PrevPos, m_PrevTh, m_PrevRadius, m_PrevDangling, m_PrevOverlap);
+        }
+        // store current as prev
+        m_PrevOverlap = ov;
+        m_PrevDangling = dg;
+        m_PrevTh = th;
+        m_PrevRadius = r;
+        m_PrevPos = p;
+      }
+    }
+  }
+
+  void closeAny()
+  {
+    if (m_HasPrev) {
+      // draw last skipped point
+      drawPoint(m_PrevPos, m_PrevTh, m_PrevRadius, m_PrevDangling, m_PrevOverlap);
+      m_HasPrev = false;
+    }
+    m_Empty = true;
+  }
+
+};
+
+GPUBead g_Bead;
+
+// ----------------------------------------------------------------
+
 bool step_simulation(bool gpu_draw)
 {
   float raster_erode = c_HeightFieldStep * sqrt(2.0f);
@@ -595,17 +736,17 @@ bool step_simulation(bool gpu_draw)
     // std::cerr << gcode_line() << std::endl;
 
     if (len > 1e-6 && !motion_is_travel()) {
-      
+
       // std::cerr << 'x';
 
       // print move
 
-      double cs       = M_PI * g_FilamentDiameter * g_FilamentDiameter / 4.0f; // mm^2
-      double sa       = motion_get_current_e_per_xyz() * cs;   // vf / len;
-      double r        = sqrt(sa / M_PI); // sa = pi*r^2
+      double cs = M_PI * g_FilamentDiameter * g_FilamentDiameter / 4.0f; // mm^2
+      double sa = motion_get_current_e_per_xyz() * cs;   // vf / len;
+      double r = sqrt(sa / M_PI); // sa = pi*r^2
       double squash_t = min(th / 2.0, r);
-      double rs       = disk_squashed_radius(r, squash_t);
-      double max_th   = motion_get_current_e_per_xyz() * cs / g_NozzleDiameter;
+      double rs = disk_squashed_radius(r, squash_t);
+      double max_th = motion_get_current_e_per_xyz() * cs / g_NozzleDiameter;
 
       if (rs > 0.3f) {
         std::cerr << sprint("z %.6f th %.6f th_prev %.6f rs %.6f \n", (float)pos[2], (float)th, (float)th_prev, (float)rs);
@@ -623,12 +764,12 @@ bool step_simulation(bool gpu_draw)
       if (pos[2] > g_StatsHeightThres) {
 
         dangling = danglingAt((float)max_th, v3f(pos), (float)rs);
-        overlap  = overlapAt((float)th, v3f(pos), (float)rs - raster_erode);
+        overlap = overlapAt((float)th, v3f(pos), (float)rs - raster_erode);
 
         // dangling only if > 60%
         dangling = max(dangling - 0.6f, 0.0f) / 0.4f;
         // overlap only if > 40%
-        overlap  = max(overlap - 0.4f, 0.0f) / 0.6f;
+        overlap = max(overlap - 0.4f, 0.0f) / 0.6f;
 
       }
 
@@ -636,32 +777,7 @@ bool step_simulation(bool gpu_draw)
       g_GlobalDepositionLength += len;
 
       if (gpu_draw) {
-        g_ShaderDeposition.u_height   .set((float)pos[2]);
-        g_ShaderDeposition.u_thickness.set((float)th);
-        g_ShaderDeposition.u_radius   .set((float)r);
-        g_ShaderDeposition.u_dangling .set(dangling);
-        g_ShaderDeposition.u_overlap  .set(overlap);
-        g_ShaderDeposition.u_extruder .set(0.25f + 0.75f * gcode_extruder());
-        // add cylinder from previous
-        g_ShaderDeposition.u_model.set(
-          translationMatrix(v3f(0, 0, -(float)squash_t))
-          * alignAlongSegment(v3f(g_PrevPos), v3f(pos))
-          * scaleMatrix(v3f((float)rs, (float)rs, 1))
-        );
-        g_GPUMesh_cylinder->render();
-        // add spheres
-        g_ShaderDeposition.u_model.set(
-          translationMatrix(v3f(g_PrevPos))
-          * translationMatrix(v3f(0, 0, -(float)squash_t))
-          * scaleMatrix(v3f((float)rs))
-        );
-        g_GPUMesh_sphere->render();
-        g_ShaderDeposition.u_model.set(
-          translationMatrix(v3f(pos))
-          * translationMatrix(v3f(0, 0, -(float)squash_t))
-          * scaleMatrix(v3f((float)rs))
-        );
-        g_GPUMesh_sphere->render();
+        g_Bead.addPoint(v3f(pos), (float)th, (float)r, dangling, overlap);
       }
 
       // update height field
@@ -671,8 +787,13 @@ bool step_simulation(bool gpu_draw)
       seg.deplength = g_GlobalDepositionLength;
       seg.radius = rs;
       g_HeightSegments.push_back(seg);
+    
+    } else {
+      g_Bead.closeAny();
     }
+
     g_PrevPos = pos;
+
     // stats
     if (g_InDangling && dangling == 0.0f) {
       g_InDangling = false;
@@ -684,6 +805,7 @@ bool step_simulation(bool gpu_draw)
       }
       dangling_len = round(dangling_len / 0.1); // quantize
       g_DanglingHisto[(int)dangling_len] += 1.0f;
+    
     }
     if (g_InOverlap && overlap == 0.0f) {
       g_InOverlap = false;
