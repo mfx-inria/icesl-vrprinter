@@ -53,11 +53,11 @@ const float   c_HeightFieldStep  = 0.04f; // mm
 
 float         g_StatsHeightThres = 1.2f; // mm, ignored everything below regarding overlaps and dangling
 
-float         g_MmStep = 0.4f;
+float         g_MmStep = 0.001f;
+int           g_StartAtLine = 4000;
 
 float         g_GlobalDepositionLength = 0.0f;
 
-int           g_StartAtLine    = 0;
 bool          g_ColorOverhangs = true;
 
 bool          g_InDangling = false;
@@ -67,6 +67,9 @@ std::map<int, float> g_DanglingHisto;
 bool          g_InOverlap = false;
 float         g_InOverlapStart = 0.0;
 std::map<int, float> g_OverlapHisto;
+
+bool          g_DumpHeightField = false;
+float         g_DumpHeightFieldStartLen = 0.0f;
 
 std::string   g_GCode_string;
 
@@ -286,11 +289,16 @@ void ImGuiPanel()
       if (ImGui::Button("Clear below")) {
         g_ForceClear = true;
       }
+      ImGui::SameLine();
+      if (ImGui::Button("Dump")) {
+        g_DumpHeightField = true;
+        g_DumpHeightFieldStartLen = g_GlobalDepositionLength;
+      }
     }
     // control
     ImGui::SetNextTreeNodeOpen(true);
     if (ImGui::CollapsingHeader("Control")) {
-      ImGui::SliderFloat("Step (mm)", &g_MmStep, 0.01f, 10.0f,"%.2f",3.0f);
+      ImGui::SliderFloat("Step (mm)", &g_MmStep, 0.001f, 10.0f,"%.3f",3.0f);
       ImGui::Checkbox("Color overlaps (blue) and overhangs (red)", &g_ColorOverhangs);
     }
     // status
@@ -512,7 +520,9 @@ m4x4f alignAlongSegment(const v3f& p0, const v3f& p1)
 
 void step_simulation(bool gpu_draw)
 {
-  float tmstep = g_MmStep / (gcode_speed() / 1000.0f);
+  float raster_erode = c_HeightFieldStep * sqrt(2.0f);
+
+  float tmstep  = g_MmStep / (gcode_speed() / 1000.0f);
   float step_ms = tmstep;
   while (step_ms > 0.0f) {
     // step motion
@@ -556,23 +566,30 @@ void step_simulation(bool gpu_draw)
     if (vf > 0.0f) {
 
       // print move
+
       float sa       = vf / len;
       float r        = sqrt(sa / (float)M_PI); // sa = pi*r^2
       float squash_t = min(th / 2.0f, r);
       float rs       = disk_squashed_radius(r, squash_t);
-
       float max_th   = vf / len / g_NozzleDiameter;
+
+      /// /////////////////////////////////////////
+      // fixed th and radius
+      //th       = 0.2f;
+      //squash_t = th;
+      //rs       = g_NozzleDiameter / 2.0f;
+      /// /////////////////////////////////////////
 
       // stats
       if (pos[2] > g_StatsHeightThres) {
 
-        dangling = danglingAt(max_th, pos, g_NozzleDiameter / 2.0f);
-        overlap  = overlapAt(th, pos, rs);
+        dangling = danglingAt(max_th, pos, g_NozzleDiameter / 2.0f - raster_erode);
+        overlap  = overlapAt(th, pos, rs - raster_erode);
 
         // dangling only if > 50%
         dangling = max(dangling - 0.5f, 0.0f) * 2.0f;
-        // overlap only if > 10%
-        overlap  = max(overlap - 0.1f, 0.0f) / 0.9f;
+        // overlap only if > 40%
+        overlap  = max(overlap - 0.4f, 0.0f) / 0.6f;
 
       }
 
@@ -643,10 +660,10 @@ void step_simulation(bool gpu_draw)
     // height segments (with delay)
     auto S = g_HeightSegments.begin();
     while (S != g_HeightSegments.end()) {
-      if ( S->deplength + max(g_NozzleDiameter,g_MmStep) * 2.0f < g_GlobalDepositionLength
+      if ( S->deplength + max(g_NozzleDiameter,g_MmStep) * 4.0f < g_GlobalDepositionLength
         || max(S->a[2],S->b[2]) < pos[2]
         ) {
-        rasterizeInHeightField(S->a, S->b, S->radius);
+        rasterizeInHeightField(S->a, S->b, S->radius /*- raster_erode*/); // uncomment to visualize raster erode
         S = g_HeightSegments.erase(S);
       } else {
         // S++;
@@ -793,6 +810,18 @@ void mainRender()
       }
       g_ShaderSimple.end();
       glEnable(GL_DEPTH_TEST);
+    }
+
+    if (g_DumpHeightField) {
+      ImageRGB img(g_HeightField.xsize(), g_HeightField.ysize());
+      ForImage((&img), i, j) {
+        img.pixel(i, j) = uchar(frac(g_HeightField.at(i, j)[0]) * 255.0f);
+      }
+      static int cnt = 0;
+      saveImage(sprint("E:\\SCRATCH\\dump\\hfield_%04d.png",cnt++), &img);
+      if (g_GlobalDepositionLength - g_DumpHeightFieldStartLen > 10.0f) {
+        g_DumpHeightField = false;
+      }
     }
 
 #if 0
@@ -1014,9 +1043,9 @@ int main(int argc, const char **argv)
 #else
   g_GCode_string =
     loadFileIntoString(
-    // "E:\\SLEFEBVR\\PROJECTS\\MODELS\\3DBenchy.stl.gcode"
+    "E:\\SLEFEBVR\\PROJECTS\\MODELS\\3DBenchy.stl.gcode"
     // "E:\\SLEFEBVR\\PROJECTS\\ALL\\accordion\\TMP\\knee2.gcode"
-    "D:\\Downloads\\3DBenchy.stl.gcode"
+    // "D:\\Downloads\\3DBenchy.stl.gcode"
   );
   session_start();
 #endif
