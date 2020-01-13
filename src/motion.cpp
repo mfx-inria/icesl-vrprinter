@@ -88,10 +88,6 @@ bool motion_is_travel()
 
 double motion_step(double delta_ms,bool& _done)
 {
-  if (gcode_line() == 2378) {
-    std::cerr << "x";
-  }
-
   _done           = false;
   bool advance    = false;
   v3d delta_pos   = v3d(gcode_next_pos()) - v3d(g_CurrentPos);

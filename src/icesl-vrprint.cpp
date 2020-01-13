@@ -60,11 +60,13 @@ const float   c_ThicknessEpsilon = 0.001f; // 1 um
 float         g_StatsHeightThres = 1.2f; // mm, ignored everything below regarding overlaps and dangling
 
 float         g_MmStep      = g_NozzleDiameter * 0.5f;
+float         g_UserMmStep  = 1000.0f;
 int           g_StartAtLine = 0;
 int           g_LastLine    = 0;
 
 double        g_GlobalDepositionLength = 0.0;
 
+bool          g_ShowTrajectory = false;
 bool          g_ColorOverhangs = true;
 
 bool          g_InDangling = false;
@@ -314,8 +316,9 @@ void ImGuiPanel()
     // control
     ImGui::SetNextTreeNodeOpen(true);
     if (ImGui::CollapsingHeader("Control")) {
-      ImGui::SliderFloat("Step (mm)", &g_MmStep, 0.001f, 10.0f,"%.3f",3.0f);
-      ImGui::Checkbox("Color overlaps (blue) and overhangs (red)", &g_ColorOverhangs);
+      ImGui::SliderFloat("Step (mm)", &g_UserMmStep, 0.001f, 1000.0f,"%.3f",3.0f);
+      ImGui::Checkbox("Show trajectory", &g_ShowTrajectory);
+      ImGui::Checkbox("Color overlaps (blue) and overhangs (red)", &g_ColorOverhangs);      
     }
     // status
     ImGui::SetNextTreeNodeOpen(true);
@@ -543,7 +546,6 @@ class GPUBead
 private:
 
   bool m_Empty = true;
-  bool m_HasPrev = false;
 
   // last drawn point
   float m_LastOverlap = 0.0f;
@@ -551,13 +553,6 @@ private:
   float m_LastTh = 0.0f;
   float m_LastRadius = 0.0f;
   v3f   m_LastPos;
-
-  // previous (not drawn) point
-  float m_PrevOverlap  = 0.0f;
-  float m_PrevDangling = 0.0f;
-  float m_PrevTh = 0.0f;
-  float m_PrevRadius = 0.0f;
-  v3f   m_PrevPos;
 
   void drawSegment(v3f a,v3f b,float th,float r,float dg,float ov)
   {
@@ -568,7 +563,7 @@ private:
     g_ShaderDeposition.u_radius.set((float)r);
     g_ShaderDeposition.u_dangling.set(dg);
     g_ShaderDeposition.u_overlap.set(ov);
-    g_ShaderDeposition.u_extruder.set(0);
+    g_ShaderDeposition.u_extruder.set(0.25f);
     // add cylinder from previous
     g_ShaderDeposition.u_model.set(
       translationMatrix(v3f(0, 0, -(float)squash_t))
@@ -593,11 +588,7 @@ private:
 
 public:
 
-  GPUBead() 
-  {
-    m_Empty = true;
-    m_HasPrev = false;
-  }
+  GPUBead() {}
 
   void drawPoint(v3f p, float th, float r, float dg, float ov)
   {
@@ -614,7 +605,6 @@ public:
   void addPoint(v3f p, float th, float r, float dg,float ov)
   {
     if (m_Empty) {
-
       m_Empty = false;
       // record as last drawn
       m_LastOverlap = ov;
@@ -622,54 +612,13 @@ public:
       m_LastTh = th;
       m_LastRadius = r;
       m_LastPos = p;
-
     } else {
-
-      if (!m_HasPrev) {
-        // start
-        m_HasPrev = true;
-        // record as prev
-        m_PrevOverlap = ov;
-        m_PrevDangling = dg;
-        m_PrevTh = th;
-        m_PrevRadius = r;
-        m_PrevPos = p;
-      } else {
-        // shall we draw the previous point or skip it?
-        float delta_th = abs(m_PrevTh - th);
-        float delta_dg = abs(m_PrevDangling - dg);
-        float delta_ov = abs(m_PrevOverlap - ov);
-        float delta_rd = abs(m_PrevRadius - r);
-        float dot_dir  = abs(dot(
-          normalize_safe(p - m_PrevPos),
-          normalize_safe(m_PrevPos-m_LastPos))
-        );
-        if (false
-          || delta_th > 1e-2f
-          || delta_dg > 0.01f
-          || delta_ov > 0.01f
-          || delta_rd > 0.01f
-          || dot_dir < 1.0f - 1e-4f) {
-          // draw previous point
-          drawPoint(m_PrevPos, m_PrevTh, m_PrevRadius, m_PrevDangling, m_PrevOverlap);
-        }
-        // store current as prev
-        m_PrevOverlap = ov;
-        m_PrevDangling = dg;
-        m_PrevTh = th;
-        m_PrevRadius = r;
-        m_PrevPos = p;
-      }
+      drawPoint(p, th, r, dg, ov);
     }
   }
 
   void closeAny()
   {
-    if (m_HasPrev) {
-      // draw last skipped point
-      drawPoint(m_PrevPos, m_PrevTh, m_PrevRadius, m_PrevDangling, m_PrevOverlap);
-      m_HasPrev = false;
-    }
     m_Empty = true;
   }
 
@@ -727,7 +676,9 @@ bool step_simulation(bool gpu_draw)
       th_prev = th;
     }
 
-    g_Trajectory.push_back(pos);
+    if (g_ShowTrajectory) {
+      g_Trajectory.push_back(pos);
+    }
 
     double len     = length(pos - g_PrevPos);
     float dangling = 0.0f;
@@ -748,10 +699,10 @@ bool step_simulation(bool gpu_draw)
       double rs = disk_squashed_radius(r, squash_t);
       double max_th = motion_get_current_e_per_xyz() * cs / g_NozzleDiameter;
 
-      if (rs > 0.3f) {
-        std::cerr << sprint("z %.6f th %.6f th_prev %.6f rs %.6f \n", (float)pos[2], (float)th, (float)th_prev, (float)rs);
-        sl_assert(false);
-      }
+      //if (rs > 0.3f) {
+      //  std::cerr << sprint("z %.6f th %.6f th_prev %.6f rs %.6f \n", (float)pos[2], (float)th, (float)th_prev, (float)rs);
+        //sl_assert(false);
+      //}
 
       /// /////////////////////////////////////////
       // fixed th and radius
@@ -789,7 +740,9 @@ bool step_simulation(bool gpu_draw)
       g_HeightSegments.push_back(seg);
     
     } else {
-      g_Bead.closeAny();
+      if (gpu_draw) {
+        g_Bead.closeAny();
+      }
     }
 
     g_PrevPos = pos;
@@ -798,11 +751,12 @@ bool step_simulation(bool gpu_draw)
     if (g_InDangling && dangling == 0.0f) {
       g_InDangling = false;
       double dangling_len = (g_GlobalDepositionLength - g_InDanglingStart);
+      /*
       if (dangling_len >= 4.5f) {
         std::cerr << "STOP";
         g_Paused = true;
-        // sl_assert(false);
       }
+      */
       dangling_len = round(dangling_len / 0.1); // quantize
       g_DanglingHisto[(int)dangling_len] += 1.0f;
     
@@ -915,20 +869,25 @@ void mainRender()
     g_ShaderDeposition.u_ZFar.set(ZFar);
 
     if (!g_Paused) {
-      step_simulation(true);
+      int n = max(1,(int)round(g_UserMmStep / g_MmStep));
+      ForIndex(sub, n) {
+        step_simulation(true);
+      }
     }
 
     g_ShaderDeposition.end();
 
     g_RT->unbind();
 
-    // trajectory
-    while (g_Trajectory.size() > 256) {
-      g_Trajectory.erase(g_Trajectory.begin());
-    }
-    // erase one each time
-    if (!g_Trajectory.empty()) {
-      g_Trajectory.erase(g_Trajectory.begin());
+    if (g_ShowTrajectory) {
+      // trajectory
+      while (g_Trajectory.size() > 256) {
+        g_Trajectory.erase(g_Trajectory.begin());
+      }
+      // erase one each time
+      if (!g_Trajectory.empty()) {
+        g_Trajectory.erase(g_Trajectory.begin());
+      }
     }
 
     if (!redraw) {
@@ -954,7 +913,7 @@ void mainRender()
     g_ShaderFinal.end();
 
     // render trajectory
-    if (!g_Trajectory.empty()) {
+    if (g_ShowTrajectory && !g_Trajectory.empty()) {
       glEnable(GL_BLEND);
       glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
       glDisable(GL_DEPTH_TEST);
@@ -1053,10 +1012,8 @@ void mainRender()
 
   if (!g_FatalError || g_FatalErrorAllowRestart) {
 #ifdef EMSCRIPTEN
-/*
-          std::string command = "reportError(" + to_string(g_Script->lastErrorLine()) + ",'" + jsEncodeString(g_Script->lastErrorMessage().c_str()) + "');";
-          emscripten_run_script(command.c_str());
-*/
+//        std::string command = "reportError(" + to_string(g_Script->lastErrorLine()) + ",'" + jsEncodeString(g_Script->lastErrorMessage().c_str()) + "');";
+//        emscripten_run_script(command.c_str());
 #endif
   }
 
