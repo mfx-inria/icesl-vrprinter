@@ -59,7 +59,7 @@ const float   c_ThicknessEpsilon = 0.001f; // 1 um
 
 float         g_StatsHeightThres = 1.2f; // mm, ignored everything below regarding overlaps and dangling
 
-float         g_MmStep      = c_HeightFieldStep;
+float         g_MmStep      = g_NozzleDiameter * 0.5f;
 int           g_StartAtLine = 0;
 int           g_LastLine    = 0;
 
@@ -77,6 +77,8 @@ std::map<int, float> g_OverlapHisto;
 
 bool          g_DumpHeightField = false;
 double        g_DumpHeightFieldStartLen = 0.0;
+
+bool          g_Paused = false;
 
 std::string   g_GCode_string;
 
@@ -303,6 +305,10 @@ void ImGuiPanel()
       if (ImGui::Button("Dump")) {
         g_DumpHeightField = true;
         g_DumpHeightFieldStartLen = g_GlobalDepositionLength;
+      }
+      ImGui::SameLine();
+      if (ImGui::Button("Pause")) {
+        g_Paused = !g_Paused;
       }
     }
     // control
@@ -586,11 +592,11 @@ bool step_simulation(bool gpu_draw)
     float dangling = 0.0f;
     float overlap  = 0.0f;
 
-    std::cerr << gcode_line() << std::endl;
+    // std::cerr << gcode_line() << std::endl;
 
-    if (len > 1e-6) {
+    if (len > 1e-6 && !motion_is_travel()) {
       
-      std::cerr << 'x';
+      // std::cerr << 'x';
 
       // print move
 
@@ -630,12 +636,12 @@ bool step_simulation(bool gpu_draw)
       g_GlobalDepositionLength += len;
 
       if (gpu_draw) {
-        g_ShaderDeposition.u_height.set((float)pos[2]);
+        g_ShaderDeposition.u_height   .set((float)pos[2]);
         g_ShaderDeposition.u_thickness.set((float)th);
-        g_ShaderDeposition.u_radius.set((float)r);
-        g_ShaderDeposition.u_dangling.set(dangling);
-        g_ShaderDeposition.u_overlap.set(overlap);
-        g_ShaderDeposition.u_extruder.set(0.25f + 0.75f * gcode_extruder());
+        g_ShaderDeposition.u_radius   .set((float)r);
+        g_ShaderDeposition.u_dangling .set(dangling);
+        g_ShaderDeposition.u_overlap  .set(overlap);
+        g_ShaderDeposition.u_extruder .set(0.25f + 0.75f * gcode_extruder());
         // add cylinder from previous
         g_ShaderDeposition.u_model.set(
           translationMatrix(v3f(0, 0, -(float)squash_t))
@@ -671,6 +677,11 @@ bool step_simulation(bool gpu_draw)
     if (g_InDangling && dangling == 0.0f) {
       g_InDangling = false;
       double dangling_len = (g_GlobalDepositionLength - g_InDanglingStart);
+      if (dangling_len >= 4.5f) {
+        std::cerr << "STOP";
+        g_Paused = true;
+        // sl_assert(false);
+      }
       dangling_len = round(dangling_len / 0.1); // quantize
       g_DanglingHisto[(int)dangling_len] += 1.0f;
     }
@@ -694,7 +705,7 @@ bool step_simulation(bool gpu_draw)
     auto S = g_HeightSegments.begin();
     while (S != g_HeightSegments.end()) {
       if ( S->deplength + max((double)g_NozzleDiameter,g_MmStep) * 4.0 < g_GlobalDepositionLength
-        || max(S->a[2],S->b[2]) + c_ThicknessEpsilon < pos[2]
+        || max(S->a[2],S->b[2]) < pos[2]
         ) {
         rasterizeInHeightField(v3f(S->a), v3f(S->b), (float)S->radius /*- raster_erode*/); // uncomment to visualize raster erode
         S = g_HeightSegments.erase(S);
@@ -781,7 +792,9 @@ void mainRender()
     g_ShaderDeposition.u_ZNear.set(ZNear);
     g_ShaderDeposition.u_ZFar.set(ZFar);
 
-    step_simulation(true);
+    if (!g_Paused) {
+      step_simulation(true);
+    }
 
     g_ShaderDeposition.end();
 
@@ -1116,7 +1129,7 @@ int main(int argc, const char **argv)
     std::cerr << "==  overlaps   ==" << std::endl;
     ho.print();
 
-    //exit(0);
+    exit(0);
 
     // printer_reset();
 

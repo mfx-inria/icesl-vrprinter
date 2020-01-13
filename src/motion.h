@@ -22,3 +22,6 @@ double motion_step(double delta_ms,bool& _done);
 
 // restarts from scratch
 void motion_reset(double filament_diameter_mm);
+
+// returns true if motion is a travel
+bool motion_is_travel();

@@ -6,6 +6,7 @@
 
 v4d    g_PrevGcodePos = v4d(0);
 v4d    g_CurrentPos   = v4d(0);
+bool   g_IsTravel     = false;
 double g_Current_EperXYZ = 0.0;
 double g_ConsumedE    = 0.0;
 double g_FilamentCrossArea = M_PI * 1.75 * 1.75;
@@ -17,6 +18,7 @@ void  motion_start(double filament_diameter_mm)
   g_FilamentCrossArea = (double)M_PI * filament_diameter_mm * filament_diameter_mm / 4.0f;
   g_PrevGcodePos = v4d(0);
   g_CurrentPos = v4d(0);
+  g_IsTravel = false;
   g_Current_EperXYZ = 0.0;
   g_ConsumedE  = 0.0;
   gcode_advance();
@@ -29,6 +31,7 @@ void motion_reset(double filament_diameter_mm)
   g_FilamentCrossArea = (double)M_PI * filament_diameter_mm * filament_diameter_mm / 4.0f;
   g_PrevGcodePos = gcode_next_pos();
   g_CurrentPos = v4d(gcode_next_pos());
+  g_IsTravel = false;
   g_Current_EperXYZ = 0.0;
   g_ConsumedE  = (double)gcode_next_pos()[3];
 }
@@ -72,6 +75,13 @@ double motion_get_current_flow() // mm^3 / sec
     return 0.0f;
   }
   return (double)(vl / tm);
+}
+
+// --------------------------------------------------------------
+
+bool motion_is_travel()
+{
+  return g_IsTravel;
 }
 
 // --------------------------------------------------------------
@@ -128,6 +138,7 @@ double motion_step(double delta_ms,bool& _done)
     step_e   = 0.0;
   }
   g_Current_EperXYZ = e_per_xyz();
+  g_IsTravel = abs(gcode_next_pos()[3] - g_PrevGcodePos[3]) < 1e-6;
   if (advance) {
     // snap to exact pos
     g_CurrentPos = gcode_next_pos();
