@@ -69,6 +69,10 @@ double        g_GlobalDepositionLength = 0.0;
 bool          g_ShowTrajectory = false;
 bool          g_ColorOverhangs = true;
 
+bool          g_AutoPause = false;
+float         g_AutoPauseDanglingLen = 5.0f;
+float         g_AutoPauseOverlapLen  = 5.0f;
+
 bool          g_InDangling = false;
 double        g_InDanglingStart = 0.0;
 std::map<int, float> g_DanglingHisto;
@@ -308,10 +312,6 @@ void ImGuiPanel()
         g_DumpHeightField = true;
         g_DumpHeightFieldStartLen = g_GlobalDepositionLength;
       }
-      ImGui::SameLine();
-      if (ImGui::Button("Pause")) {
-        g_Paused = !g_Paused;
-      }
     }
     // control
     ImGui::SetNextTreeNodeOpen(true);
@@ -379,6 +379,23 @@ void ImGuiPanel()
         ImGui::PlotHistogram("overlaps (blue)", &histo[0], (int)histo.size());
       }
     }
+    // pause
+    ImGui::SetNextTreeNodeOpen(true);
+    if (ImGui::CollapsingHeader("Pause")) {
+      if (g_Paused) {
+        if (ImGui::Button("Resume")) {
+          g_Paused = false;
+        }
+      } else {
+        if (ImGui::Button("Stop")) {
+          g_Paused = true;
+        }
+      }
+      ImGui::Checkbox("Auto pause", &g_AutoPause);
+      ImGui::InputFloat("overhang >", &g_AutoPauseDanglingLen, 1.0f, 1000.0f);
+      ImGui::InputFloat("overlap  >", &g_AutoPauseOverlapLen, 1.0f, 1000.0f);
+    }
+
     ImGui::End();
 
   } else { // fatal error
@@ -751,12 +768,9 @@ bool step_simulation(bool gpu_draw)
     if (g_InDangling && dangling == 0.0f) {
       g_InDangling = false;
       double dangling_len = (g_GlobalDepositionLength - g_InDanglingStart);
-      /*
-      if (dangling_len >= 4.5f) {
-        std::cerr << "STOP";
+      if (g_AutoPause && dangling_len >= g_AutoPauseDanglingLen) {
         g_Paused = true;
       }
-      */
       dangling_len = round(dangling_len / 0.1); // quantize
       g_DanglingHisto[(int)dangling_len] += 1.0f;
     
@@ -764,6 +778,9 @@ bool step_simulation(bool gpu_draw)
     if (g_InOverlap && overlap == 0.0f) {
       g_InOverlap = false;
       double overlap_len = (g_GlobalDepositionLength - g_InOverlapStart);
+      if (g_AutoPause && overlap_len >= g_AutoPauseOverlapLen) {
+        g_Paused = true;
+      }
       overlap_len = round(overlap_len / 0.1); // quantize
       g_OverlapHisto[(int)overlap_len] += 1.0f;
     }
@@ -853,6 +870,8 @@ void mainRender()
       LibSL::GPUHelpers::clearScreen(LIBSL_COLOR_BUFFER | LIBSL_DEPTH_BUFFER, 0.0f, 0.0f, 0.0f);
       // reset motion
       printer_reset();
+      // unpause
+      g_Paused = false;
     }
     if (g_ForceClear) {
       // clear
