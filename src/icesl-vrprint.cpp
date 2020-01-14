@@ -1124,20 +1124,25 @@ int main(int argc, const char *argv[])
 {
   /// prepare cmd line arguments
   TCLAP::CmdLine   cmd(" Analyse Gcode and produce statistics", ' ', "1.0");
+
   TCLAP::UnlabeledValueArg<std::string> gcArg("gcode", "gcode to load", false, "", "filename");
   TCLAP::SwitchArg statsArg("s", "stats", "compute stats and return", false);
+  TCLAP::ValueArg<int> viewArg("v", "view", "use a predefined view for trackballUI", false, -1, "int");
 
   std::string cmd_gcode = "";
   bool cmd_stats = false;
+  int cmd_view = -1;
 
   try
   {
     cmd.add(gcArg);
     cmd.add(statsArg);
+    cmd.add(viewArg);
     cmd.parse(argc, argv);
 
     cmd_gcode = gcArg.getValue();
     cmd_stats = statsArg.getValue();
+    cmd_view = viewArg.getValue();
   }
   catch (const TCLAP::ArgException & e)
   {
@@ -1212,12 +1217,18 @@ int main(int argc, const char *argv[])
   TrackballUI::trackball().setAllowRoll(false);
   TrackballUI::trackball().setUp(Trackball::Z_neg);
 
+  /// view selection
+  if (cmd_view >= 0) {
+    std::string view_file = "trackball.F0";
+    view_file += to_string(cmd_view);
+    TrackballUI::trackballLoad(view_file.c_str());
+  }
+
+
   SimpleUI::initImGui();
 
   /// load gcode
   if (!cmd_gcode.empty()) {
-    std::cerr << "gcode param set" << std::endl;
-    std::cerr << "gcode loaded: " << cmd_gcode << std::endl;
     g_GCode_string = loadFileIntoString(cmd_gcode.c_str());
   }
   else {
