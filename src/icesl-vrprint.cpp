@@ -1162,7 +1162,7 @@ int main(int argc, const char **argv)
   LibSL::GPUHelpers::clearScreen(LIBSL_COLOR_BUFFER | LIBSL_DEPTH_BUFFER, 0.0f, 0.0f, 0.0f);
   g_RT->unbind();
 
-  g_GPUMesh_sphere = AutoPtr<MeshRenderer<mvf_mesh> >( new MeshRenderer<mvf_mesh>(shape_sphere( 1.0f, 12 )) );
+  g_GPUMesh_sphere   = AutoPtr<MeshRenderer<mvf_mesh> >( new MeshRenderer<mvf_mesh>(shape_sphere( 1.0f, 12 )) );
   g_GPUMesh_cylinder = AutoPtr<MeshRenderer<mvf_mesh> >(new MeshRenderer<mvf_mesh>(shape_cylinder(1.0f, 1.0f, 1.0f, 12)));
 
   /// default view
@@ -1234,6 +1234,7 @@ int main(int argc, const char **argv)
   }
 
 #endif
+
   motion_start( g_FilamentDiameter );
 
   printer_reset();
