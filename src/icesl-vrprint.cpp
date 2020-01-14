@@ -4,6 +4,11 @@ NOTE: we assume there is no curved printing, eg z grows monotically
 
 */
 
+#include <LibSL.h>
+#include <LibSL_gl.h>
+
+LIBSL_WIN32_FIX;
+
 #include <imgui.h>
 
 #ifdef EMSCRIPTEN
@@ -12,15 +17,11 @@ NOTE: we assume there is no curved printing, eg z grows monotically
 #endif
 
 #ifndef EMSCRIPTEN
+#include "FileDialog.h"
 #ifdef _MSC_VER
 #define glActiveTexture glActiveTextureARB
 #endif
 #endif
-
-#include <LibSL.h>
-#include <LibSL_gl.h>
-
-LIBSL_WIN32_FIX;
 
 // ----------------------------------------------------------------
 
@@ -1106,8 +1107,47 @@ EMSCRIPTEN_BINDINGS(my_module) {
 
 // ----------------------------------------------------------------
 
-int main(int argc, const char **argv)
+std::string load_gcode() {
+  std::string gcode_string;
+#ifdef EMSCRIPTEN
+  emscripten_run_script("parseCommandLine();\n");
+  if (!g_Downloading) {
+    gcode_string = loadFileIntoString("./icesl.gcode");
+  }
+#else
+  gcode_string = loadFileIntoString(openFileDialog(OFD_FILTER_GCODE).c_str());
+#endif
+  return gcode_string;
+}
+
+int main(int argc, const char *argv[])
 {
+  /// prepare cmd line arguments
+  TCLAP::CmdLine   cmd(" Analyse Gcode and produce statistics", ' ', "1.0");
+  TCLAP::UnlabeledValueArg<std::string> gcArg("gcode", "gcode to load", false, "", "filename");
+  TCLAP::SwitchArg statsArg("s", "stats", "compute stats and return", false);
+
+  std::string cmd_gcode = "";
+  bool cmd_stats = false;
+
+  try
+  {
+    cmd.add(gcArg);
+    cmd.add(statsArg);
+    cmd.parse(argc, argv);
+
+    cmd_gcode = gcArg.getValue();
+    cmd_stats = statsArg.getValue();
+  }
+  catch (const TCLAP::ArgException & e)
+  {
+    std::cerr << "Error: " << e.error() << " for arg " << e.argId() << std::endl;
+  }
+  catch (...)
+  {
+    std::cerr << "Error: unknown exception caught" << std::endl;
+  }
+
   /// init simple UI
   TrackballUI::onRender = mainRender;
   TrackballUI::onKeyPressed = mainKeyboard;
@@ -1175,34 +1215,18 @@ int main(int argc, const char **argv)
   SimpleUI::initImGui();
 
   /// load gcode
-#ifdef EMSCRIPTEN
-  emscripten_run_script("parseCommandLine();\n");
-  if (!g_Downloading) {
-    g_GCode_string = loadFileIntoString("./icesl.gcode");
-    session_start();
-    std::string command = "setupEditor();";
-    emscripten_run_script(command.c_str());
+  if (!cmd_gcode.empty()) {
+    std::cerr << "gcode param set" << std::endl;
+    std::cerr << "gcode loaded: " << cmd_gcode << std::endl;
+    g_GCode_string = loadFileIntoString(cmd_gcode.c_str());
   }
-#else
-
-  // E:\SLEFEBVR\PROJECTS\MODELS\3DBenchy.stl.gcode --stats
-  // E:\SLEFEBVR\PROJECTS\ALL\accordion\TMP\knee2.gcode
-  // "D:\\Downloads\\3DBenchy.stl.gcode"
-
-  TCLAP::CmdLine   cmd("", ' ', "1.0");
-  TCLAP::UnlabeledValueArg<std::string> gcArg("gcode", "gcode to load", true, "", "filename");
-  TCLAP::SwitchArg statsArg("s", "stats", "compute stats and return");
-
-  cmd.add(gcArg);
-  cmd.add(statsArg);
-  cmd.parse(argc, argv);
-
-  g_GCode_string = loadFileIntoString(gcArg.getValue().c_str());
-
+  else {
+    g_GCode_string = load_gcode();
+  }
   session_start();
 
-  if (statsArg.isSet()) {
-
+  /// stats mode (generate stats without opening GUI
+  if (cmd_stats) {
     Console::progressTextInit(g_LastLine);
     while (!step_simulation(false)) { 
       Console::progressTextUpdate(gcode_line());
@@ -1228,12 +1252,15 @@ int main(int argc, const char **argv)
     ho.print();
 
     exit(0);
-
-    // printer_reset();
-
   }
 
+#ifdef EMSCRIPTEN
+  /// load gcode in editor window
+  std::string command = "setupEditor();";
+  emscripten_run_script(command.c_str());
+  }
 #endif
+
   motion_start( g_FilamentDiameter );
 
   printer_reset();
