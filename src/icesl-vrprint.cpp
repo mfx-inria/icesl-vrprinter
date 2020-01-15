@@ -4,6 +4,9 @@ NOTE: we assume there is no curved printing, eg z grows monotically
 
 */
 
+#include <iostream>
+#include <fstream>
+
 #include "icesl-vrprint.h"
 
 #include "bed.h"
@@ -24,21 +27,25 @@ int main(int argc, const char* argv[])
 
   TCLAP::UnlabeledValueArg<std::string> gcArg("gcode", "gcode to load", false, "", "filename");
   TCLAP::SwitchArg statsArg("s", "stats", "compute stats and return", false);
+  TCLAP::SwitchArg export_statsArg("e", "export", "export computed stats to a latex file", false);
   TCLAP::ValueArg<int> viewArg("v", "view", "use a predefined view for trackballUI", false, -1, "int");
 
   std::string cmd_gcode = "";
   bool cmd_stats = false;
+  bool cmd_export_stats = false;
   int cmd_view = -1;
 
   try
   {
     cmd.add(gcArg);
     cmd.add(statsArg);
+    cmd.add(export_statsArg);
     cmd.add(viewArg);
     cmd.parse(argc, argv);
 
     cmd_gcode = gcArg.getValue();
     cmd_stats = statsArg.getValue();
+    cmd_export_stats = export_statsArg.getValue();
     cmd_view = viewArg.getValue();
   }
   catch (const TCLAP::ArgException & e)
@@ -125,7 +132,7 @@ int main(int argc, const char* argv[])
 
   /// load gcode
   if (!cmd_gcode.empty()) {
-    g_GCode_string = loadFileIntoString(cmd_gcode.c_str());
+    g_GCode_string = load_gcode(cmd_gcode.c_str());
   }
   else {
     g_GCode_string = load_gcode();
@@ -152,11 +159,16 @@ int main(int argc, const char* argv[])
         ho << h.first;
       }
     }
-
-    std::cerr << "== unsupported ==" << std::endl;
+    std::cerr << Console::green << "\n== unsupported ==" << Console::gray << std::endl;
     hd.print();
-    std::cerr << "==  overlaps   ==" << std::endl;
+    std::cerr << Console::green << "==  overlaps   ==" << Console::gray << std::endl;
     ho.print();
+
+    // export as a .tex histogram
+    if (cmd_export_stats) {
+      export_histogram("dangling", hd);
+      export_histogram("overlap", ho);
+    }
 
     exit(0);
   }
@@ -183,17 +195,60 @@ return 0;
 
 // ----------------------------------------------------------------
 
-std::string load_gcode() {
-  std::string gcode_string;
+std::string load_gcode(std::string file) {
+  if (file.empty()) {
 #ifdef EMSCRIPTEN
-  emscripten_run_script("parseCommandLine();\n");
-  if (!g_Downloading) {
-    gcode_string = loadFileIntoString("./icesl.gcode");
-  }
+    emscripten_run_script("parseCommandLine();\n");
+    if (!g_Downloading) {
+      g_GCode_path = "./icesl.gcode";
+    }
 #else
-  gcode_string = loadFileIntoString(openFileDialog(OFD_FILTER_GCODE).c_str());
+    g_GCode_path = openFileDialog(OFD_FILTER_GCODE);
+    if (g_GCode_path.empty()) {
+      std::cerr << Console::red << "No file provided - Abording!" << Console::gray << std::endl;
+      exit(0);
+    }
+  }
+  else {
+    g_GCode_path = file;
+  }
 #endif
-  return gcode_string;
+  //g_GCode_fname = getFileName(g_GCode_path.c_str());
+  return loadFileIntoString(g_GCode_path.c_str());;
+}
+
+// ----------------------------------------------------------------
+
+void export_histogram(std::string fname, Histogram h) {
+  std::string h_values = "";
+
+
+  fname += ".tex";
+  fname = "_" + fname;
+  fname = g_GCode_path.c_str() + fname;
+  ofstream file (fname);
+  if (file.is_open()) {
+    std::cerr << Console::blue << "Generate statistics file : " << fname << Console::gray << std::endl;
+    h.printAsTex(file,50);
+    file.close();
+  }
+  else {
+    std::cerr << Console::red << "Unable to produce "<< fname << " statistics file" << Console::gray << std::endl;
+  }
+}
+
+// ----------------------------------------------------------------
+
+string getFileName(const string& s) {
+  char sep = '/';
+#ifdef _WIN32
+  sep = '\\';
+#endif
+  size_t i = s.rfind(sep, s.length());
+  if (i != string::npos) {
+    return(s.substr(i + 1, s.length() - i));
+  }
+  return("");
 }
 
 // ----------------------------------------------------------------

@@ -73,6 +73,8 @@ double        g_DumpHeightFieldStartLen = 0.0;
 
 bool          g_Paused = false;
 
+std::string   g_GCode_path;
+//std::string   g_GCode_fname;
 std::string   g_GCode_string;
 
 #include "simple.h"
@@ -214,9 +216,11 @@ void mainMouseButton(uint x, uint y, uint btn, uint flags);
 // ----------------------------------------------------------------
 // utilities
 
-string load_gcode(); // load a gcode file and return it as a string
 void session_start();
 void printer_reset();
+string load_gcode(std::string file = std::string()); // load a gcode file and return it as a string
+void export_histogram(std::string fname, Histogram h);
+string getFileName(const string& s);
 
 #ifdef EMSCRIPTEN
 void beginDownload()
