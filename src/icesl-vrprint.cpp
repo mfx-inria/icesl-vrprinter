@@ -4,184 +4,178 @@ NOTE: we assume there is no curved printing, eg z grows monotically
 
 */
 
-#include <LibSL.h>
-#include <LibSL_gl.h>
-
-LIBSL_WIN32_FIX;
-
-#include <imgui.h>
-
-#ifdef EMSCRIPTEN
-#include <emscripten.h>
-#include <emscripten/html5.h>
-#endif
-
-#ifndef EMSCRIPTEN
-#include "FileDialog.h"
-#ifdef _MSC_VER
-#define glActiveTexture glActiveTextureARB
-#endif
-#endif
-
-// ----------------------------------------------------------------
-
-#include <tclap/CmdLine.h>
-
-// ----------------------------------------------------------------
+#include "icesl-vrprint.h"
 
 #include "bed.h"
 #include "shapes.h"
 #include "gcode.h"
 #include "motion.h"
-#include "sphere_squash.h"
 
 // ----------------------------------------------------------------
 
-using namespace std;
-
-// ----------------------------------------------------------------
-
-int           g_UIWidth = 350;
-
-int           g_ScreenWidth = 700;
-int           g_ScreenHeight = 700;
-int           g_RenderWidth = 700;
-int           g_RenderHeight = 700;
-
-int           g_RTWidth  = 1024;
-int           g_RTHeight = 1024;
-
-v2f           g_BedSize(250.0f, 150.0f);
-float         g_FilamentDiameter = 1.75f;
-float         g_NozzleDiameter   = 0.4f;
-const float   c_HeightFieldStep  = 0.04f; // mm
-
-const float   c_ThicknessEpsilon = 0.001f; // 1 um
-
-float         g_StatsHeightThres = 1.2f; // mm, ignored everything below regarding overlaps and dangling
-
-float         g_MmStep      = g_NozzleDiameter * 0.5f;
-float         g_UserMmStep  = 1000.0f;
-int           g_StartAtLine = 0;
-int           g_LastLine    = 0;
-
-double        g_GlobalDepositionLength = 0.0;
-
-bool          g_ShowTrajectory = false;
-bool          g_ColorOverhangs = true;
-
-bool          g_AutoPause = false;
-float         g_AutoPauseDanglingLen = 5.0f;
-float         g_AutoPauseOverlapLen  = 5.0f;
-
-bool          g_InDangling = false;
-double        g_InDanglingStart = 0.0;
-std::map<int, float> g_DanglingHisto;
-
-bool          g_InOverlap = false;
-double        g_InOverlapStart = 0.0;
-std::map<int, float> g_OverlapHisto;
-
-bool          g_DumpHeightField = false;
-double        g_DumpHeightFieldStartLen = 0.0;
-
-bool          g_Paused = false;
-
-std::string   g_GCode_string;
-
-typedef GPUMESH_MVF1(mvf_vertex_3f)                mvf_mesh;
-typedef GPUMesh_VertexBuffer<mvf_mesh>             SimpleMesh;
-
-AutoPtr<SimpleMesh>                      g_GPUMesh_quad;
-AutoPtr<SimpleMesh>                      g_GPUMesh_axis;
-
-AutoPtr<MeshRenderer<mvf_mesh> >         g_GPUMesh_sphere;
-AutoPtr<MeshRenderer<mvf_mesh> >         g_GPUMesh_cylinder;
-
-#include "simple.h"
-AutoBindShader::simple     g_ShaderSimple;
-#include "final.h"
-AutoBindShader::final      g_ShaderFinal;
-#include "deposition.h"
-AutoBindShader::deposition g_ShaderDeposition;
-
-RenderTarget2DRGBA_Ptr g_RT;
-
-m4x4f  g_LastView = m4x4f::identity();
-bool   g_Rotating = false;
-bool   g_Dragging = false;
-float  g_Zoom = 1.0f;
-float  g_ZoomTarget = 1.0f;
-
-std::vector<v3d>                 g_Trajectory;
-
-typedef struct
+int main(int argc, const char* argv[])
 {
-  double deplength;
-  double radius;
-  v3d   a;
-  v3d   b;
-} t_height_segment;
+  /// prepare cmd line arguments
+  TCLAP::CmdLine   cmd(" Analyse Gcode and produce statistics", ' ', "1.0");
 
-std::list<t_height_segment> g_HeightSegments;
+  TCLAP::UnlabeledValueArg<std::string> gcArg("gcode", "gcode to load", false, "", "filename");
+  TCLAP::SwitchArg statsArg("s", "stats", "compute stats and return", false);
+  TCLAP::ValueArg<int> viewArg("v", "view", "use a predefined view for trackballUI", false, -1, "int");
 
-AAB<3>                   g_HeightFieldBox;
+  std::string cmd_gcode = "";
+  bool cmd_stats = false;
+  int cmd_view = -1;
 
-Array2D<Tuple<float,1> > g_HeightField;
+  try
+  {
+    cmd.add(gcArg);
+    cmd.add(statsArg);
+    cmd.add(viewArg);
+    cmd.parse(argc, argv);
 
-v3d    g_PrevPos(0.0);
+    cmd_gcode = gcArg.getValue();
+    cmd_stats = statsArg.getValue();
+    cmd_view = viewArg.getValue();
+  }
+  catch (const TCLAP::ArgException & e)
+  {
+    std::cerr << "Error: " << e.error() << " for arg " << e.argId() << std::endl;
+  }
+  catch (...)
+  {
+    std::cerr << "Error: unknown exception caught" << std::endl;
+  }
 
-bool   g_ForceRedraw = true;
-bool   g_ForceClear  = false;
-bool   g_FatalError = false;
-bool   g_FatalErrorAllowRestart = false;
-string g_FatalErrorMessage = "unkonwn error";
+  /// init simple UI
+  TrackballUI::onRender = mainRender;
+  TrackballUI::onKeyPressed = mainKeyboard;
+  TrackballUI::onMouseButtonPressed = mainMouseButton;
 
-// ----------------------------------------------------------------
+  TrackballUI::init(g_UIWidth + g_ScreenWidth, g_ScreenHeight);
 
-template <class T_Mesh>
-void addBar(AutoPtr<T_Mesh> gpumesh, v3f a, v3f b, pair<v3f, v3f> uv, float sz = 0.1f)
-{
-  v3f a00 = (a - sz * uv.first - sz * uv.second);
-  v3f a01 = (a - sz * uv.first + sz * uv.second);
-  v3f a11 = (a + sz * uv.first + sz * uv.second);
-  v3f a10 = (a + sz * uv.first - sz * uv.second);
-  v3f b00 = (b - sz * uv.first - sz * uv.second);
-  v3f b01 = (b - sz * uv.first + sz * uv.second);
-  v3f b11 = (b + sz * uv.first + sz * uv.second);
-  v3f b10 = (b + sz * uv.first - sz * uv.second);
+  // GL init
+  glEnable(GL_DEPTH_TEST);
 
-  gpumesh->vertex_3(a00[0], a00[1], a00[2]);
-  gpumesh->vertex_3(b00[0], b00[1], b00[2]);
-  gpumesh->vertex_3(b10[0], b10[1], b10[2]);
-  //
-  gpumesh->vertex_3(a00[0], a00[1], a00[2]);
-  gpumesh->vertex_3(b10[0], b10[1], b10[2]);
-  gpumesh->vertex_3(a10[0], a10[1], a10[2]);
+  // imgui
+  SimpleUI::bindImGui();
+  SimpleUI::onReshape(g_ScreenWidth + g_UIWidth, g_ScreenHeight);
 
-  gpumesh->vertex_3(a10[0], a10[1], a10[2]);
-  gpumesh->vertex_3(b11[0], b11[1], b11[2]);
-  gpumesh->vertex_3(b10[0], b10[1], b10[2]);
-  //
-  gpumesh->vertex_3(a10[0], a10[1], a10[2]);
-  gpumesh->vertex_3(a11[0], a11[1], a11[2]);
-  gpumesh->vertex_3(b11[0], b11[1], b11[2]);
+  // quad for shader invocation
+  g_GPUMesh_quad = AutoPtr<SimpleMesh>(new SimpleMesh());
+  g_GPUMesh_quad->begin(GPUMESH_TRIANGLELIST);
+  g_GPUMesh_quad->vertex_3(0, 0, 0);
+  g_GPUMesh_quad->vertex_3(1, 0, 0);
+  g_GPUMesh_quad->vertex_3(0, 1, 0);
 
-  gpumesh->vertex_3(a11[0], a11[1], a11[2]);
-  gpumesh->vertex_3(b01[0], b01[1], b01[2]);
-  gpumesh->vertex_3(b11[0], b11[1], b11[2]);
-  //
-  gpumesh->vertex_3(a11[0], a11[1], a11[2]);
-  gpumesh->vertex_3(a01[0], a01[1], a01[2]);
-  gpumesh->vertex_3(b01[0], b01[1], b01[2]);
+  g_GPUMesh_quad->vertex_3(0, 1, 0);
+  g_GPUMesh_quad->vertex_3(1, 0, 0);
+  g_GPUMesh_quad->vertex_3(1, 1, 0);
+  g_GPUMesh_quad->end();
 
-  gpumesh->vertex_3(a01[0], a01[1], a01[2]);
-  gpumesh->vertex_3(b00[0], b00[1], b00[2]);
-  gpumesh->vertex_3(b01[0], b01[1], b01[2]);
-  //
-  gpumesh->vertex_3(a00[0], a00[1], a00[2]);
-  gpumesh->vertex_3(b00[0], b00[1], b00[2]);
-  gpumesh->vertex_3(a01[0], a01[1], a01[2]);
+  // mesh for axes
+  makeAxisMesh();
+
+  // bed rendering
+  bed_init();
+
+  // shader for simple drawing
+#ifdef EMSCRIPTEN
+  g_ShaderSimple.emscripten = "precision mediump float;\n";
+#endif
+  g_ShaderSimple.init();
+
+  // shader for drawing deposited material
+#ifdef EMSCRIPTEN
+  g_ShaderDeposition.emscripten = "precision mediump float;\n";
+#endif
+  g_ShaderDeposition.init();
+
+#ifdef EMSCRIPTEN
+  g_ShaderFinal.emscripten = "precision mediump float;\n";
+#endif
+  g_ShaderFinal.init();
+  g_RT = RenderTarget2DRGBA_Ptr(new RenderTarget2DRGBA(g_RTWidth, g_RTHeight, GPUTEX_AUTOGEN_MIPMAP));
+  g_RT->bind();
+  glViewport(0, 0, g_RenderWidth, g_RenderHeight);
+  LibSL::GPUHelpers::clearScreen(LIBSL_COLOR_BUFFER | LIBSL_DEPTH_BUFFER, 0.0f, 0.0f, 0.0f);
+  g_RT->unbind();
+
+  g_GPUMesh_sphere = AutoPtr<MeshRenderer<mvf_mesh> >(new MeshRenderer<mvf_mesh>(shape_sphere(1.0f, 12)));
+  g_GPUMesh_cylinder = AutoPtr<MeshRenderer<mvf_mesh> >(new MeshRenderer<mvf_mesh>(shape_cylinder(1.0f, 1.0f, 1.0f, 12)));
+
+  /// default view
+  TrackballUI::trackball().set(v3f(-g_BedSize[0] / 2.0f, -g_BedSize[1] / 2.0f, -300.0f), v3f(0), quatf(v3f(1, 0, 0), -1.0f) * quatf(v3f(0, 0, 1), 0.0f));
+  TrackballUI::trackball().setCenter(v3f(g_BedSize[0] / 2.0f, g_BedSize[1] / 2.0f, 10.0f));
+  TrackballUI::trackball().setBallSpeed(0.0f);
+  TrackballUI::trackball().setAllowRoll(false);
+  TrackballUI::trackball().setUp(Trackball::Z_neg);
+
+  /// view selection
+  if (cmd_view > 0 && cmd_view <= 7) {
+    std::string view_file = "trackball.F0";
+    view_file += to_string(cmd_view);
+    TrackballUI::trackballLoad(view_file.c_str());
+  }
+
+
+  SimpleUI::initImGui();
+
+  /// load gcode
+  if (!cmd_gcode.empty()) {
+    g_GCode_string = loadFileIntoString(cmd_gcode.c_str());
+  }
+  else {
+    g_GCode_string = load_gcode();
+  }
+  session_start();
+
+  /// stats mode (generate stats without opening GUI
+  if (cmd_stats) {
+    Console::progressTextInit(g_LastLine);
+    while (!step_simulation(false)) {
+      Console::progressTextUpdate(gcode_line());
+    }
+    Console::progressTextEnd();
+
+    Histogram hd;
+    for (auto h : g_DanglingHisto) {
+      ForIndex(i, h.second) { // totally stupid loop, but hey, no consequence and we reuse what we have
+        hd << h.first;
+      }
+    }
+    Histogram ho;
+    for (auto h : g_OverlapHisto) {
+      ForIndex(i, h.second) { // totally stupid loop, but hey, no consequence and we reuse what we have
+        ho << h.first;
+      }
+    }
+
+    std::cerr << "== unsupported ==" << std::endl;
+    hd.print();
+    std::cerr << "==  overlaps   ==" << std::endl;
+    ho.print();
+
+    exit(0);
+  }
+
+#ifdef EMSCRIPTEN
+  /// load gcode in editor window
+  std::string command = "setupEditor();";
+  emscripten_run_script(command.c_str());
+}
+#endif
+
+motion_start(g_FilamentDiameter);
+
+printer_reset();
+
+/// main loop
+TrackballUI::loop();
+
+SimpleUI::terminateImGui();
+TrackballUI::shutdown();
+
+return 0;
 }
 
 // ----------------------------------------------------------------
@@ -246,20 +240,6 @@ void makeAxisMesh()
   addBar(g_GPUMesh_axis, v3f(0, 0, 0), v3f(0, 0, 10), make_pair(v3f(1, 0, 0), v3f(0, 1, 0)), 0.5f);
   g_GPUMesh_axis->end();
 }
-
-// ----------------------------------------------------------------
-
-bool                                     g_Downloading = false;
-float                                    g_DownloadProgress = 0.0f;
-
-// ----------------------------------------------------------------
-
-std::vector<float> g_Flows(64,0.0f);
-int                g_FlowsCount = 0;
-float              g_FlowsSample = 0.0f;
-std::vector<float> g_Speeds(64,0.0f);
-int                g_SpeedsCount = 0;
-float              g_SpeedsSample = 0.0f;
 
 // ----------------------------------------------------------------
 
@@ -410,7 +390,6 @@ void ImGuiPanel()
   }
 
   ImGui::Render();
-
 }
 
 // ----------------------------------------------------------------
@@ -436,6 +415,24 @@ string jsEncodeString(const char *strin)
     i++;
   }
   return str;
+}
+
+// ----------------------------------------------------------------
+
+m4x4f alignAlongSegment(const v3f& p0, const v3f& p1)
+{
+  v3f d = p1 - p0;
+  float l = sqrt(dot(d, d));
+  v3f   u = normalize_safe(d);
+  v3f   u_xy = normalize_safe(v3f(d[0], d[1], 0));
+  float aglZ = atan2(u_xy[0], u_xy[1]);
+  float aglX = atan2(u[2], length(v3f(u[0], u[1], 0)));
+  return translationMatrix((p0 + p1) * 0.5f)
+    * quatf(v3f(0, 0, 1), -aglZ).toMatrix()
+    * quatf(v3f(1, 0, 0), (float)M_PI / 2.0f).toMatrix()
+    * quatf(v3f(1, 0, 0), aglX).toMatrix()
+    * translationMatrix(v3f(0, 0, -l / 2.0f))
+    * scaleMatrix(v3f(1, 1, l));
 }
 
 // ----------------------------------------------------------------
@@ -541,106 +538,6 @@ float overlapAt(float th, const v3f &a, float r)
 
 // ----------------------------------------------------------------
 
-m4x4f alignAlongSegment(const v3f& p0, const v3f& p1)
-{
-  v3f d = p1 - p0;
-  float l = sqrt(dot(d, d));
-  v3f   u = normalize_safe(d);
-  v3f   u_xy = normalize_safe(v3f(d[0], d[1], 0));
-  float aglZ = atan2(u_xy[0], u_xy[1]);
-  float aglX = atan2(u[2], length(v3f(u[0], u[1], 0)));
-  return translationMatrix((p0 + p1)*0.5f)
-    * quatf(v3f(0, 0, 1), -aglZ).toMatrix()
-    * quatf(v3f(1, 0, 0), (float)M_PI / 2.0f).toMatrix()
-    * quatf(v3f(1, 0, 0), aglX).toMatrix()
-    * translationMatrix(v3f(0, 0, -l/2.0f))
-    * scaleMatrix(v3f(1, 1, l));
-}
-
-// ----------------------------------------------------------------
-
-class GPUBead
-{
-private:
-
-  bool m_Empty = true;
-
-  // last drawn point
-  float m_LastOverlap = 0.0f;
-  float m_LastDangling = 0.0f;
-  float m_LastTh = 0.0f;
-  float m_LastRadius = 0.0f;
-  v3f   m_LastPos;
-
-  void drawSegment(v3f a,v3f b,float th,float r,float dg,float ov)
-  {
-    double squash_t = min(th / 2.0, r);
-    double rs = disk_squashed_radius(r, squash_t);
-    g_ShaderDeposition.u_height.set((float)b[2]);
-    g_ShaderDeposition.u_thickness.set((float)th);
-    g_ShaderDeposition.u_radius.set((float)r);
-    g_ShaderDeposition.u_dangling.set(dg);
-    g_ShaderDeposition.u_overlap.set(ov);
-    g_ShaderDeposition.u_extruder.set(0.25f);
-    // add cylinder from previous
-    g_ShaderDeposition.u_model.set(
-      translationMatrix(v3f(0, 0, -(float)squash_t))
-      * alignAlongSegment(v3f(a), v3f(b))
-      * scaleMatrix(v3f((float)rs, (float)rs, 1))
-    );
-    g_GPUMesh_cylinder->render();
-    // add spheres
-    g_ShaderDeposition.u_model.set(
-      translationMatrix(v3f(a))
-      * translationMatrix(v3f(0, 0, -(float)squash_t))
-      * scaleMatrix(v3f((float)rs))
-    );
-    g_GPUMesh_sphere->render();
-    g_ShaderDeposition.u_model.set(
-      translationMatrix(v3f(b))
-      * translationMatrix(v3f(0, 0, -(float)squash_t))
-      * scaleMatrix(v3f((float)rs))
-    );
-    g_GPUMesh_sphere->render();
-  }
-
-public:
-
-  GPUBead() {}
-
-  void drawPoint(v3f p, float th, float r, float dg, float ov)
-  {
-    // draw segment
-    drawSegment(m_LastPos, p, th, r, dg, ov);
-    // record as last drawn
-    m_LastOverlap = ov;
-    m_LastDangling = dg;
-    m_LastTh = th;
-    m_LastRadius = r;
-    m_LastPos = p;
-  }
-
-  void addPoint(v3f p, float th, float r, float dg,float ov)
-  {
-    if (m_Empty) {
-      m_Empty = false;
-      // record as last drawn
-      m_LastOverlap = ov;
-      m_LastDangling = dg;
-      m_LastTh = th;
-      m_LastRadius = r;
-      m_LastPos = p;
-    } else {
-      drawPoint(p, th, r, dg, ov);
-    }
-  }
-
-  void closeAny()
-  {
-    m_Empty = true;
-  }
-
-};
 
 GPUBead g_Bead;
 
@@ -815,9 +712,6 @@ bool step_simulation(bool gpu_draw)
 }
 
 // ----------------------------------------------------------------
-
-const float ZNear = 0.1f;
-const float ZFar  = 500.0f;
 
 void mainRender()
 {
@@ -1076,37 +970,6 @@ void mainMouseButton(uint x, uint y, uint btn, uint flags)
 
 // ----------------------------------------------------------------
 
-#ifdef EMSCRIPTEN
-
-#include <emscripten/bind.h>
-
-void beginDownload()
-{
-  g_Downloading = true;
-  std::remove("/print.gcode");
-}
-
-void setDownloadProgress(float progress)
-{
-  g_DownloadProgress = progress;
-  cout << "progress = " << progress << endl;
-}
-
-void endDownload()
-{
-  g_Downloading = false;
-}
-
-EMSCRIPTEN_BINDINGS(my_module) {
-  emscripten::function("beginDownload", &beginDownload);
-  emscripten::function("setDownloadProgress", &setDownloadProgress);
-  emscripten::function("endDownload", &endDownload);
-}
-
-#endif
-
-// ----------------------------------------------------------------
-
 std::string load_gcode() {
   std::string gcode_string;
 #ifdef EMSCRIPTEN
@@ -1118,171 +981,6 @@ std::string load_gcode() {
   gcode_string = loadFileIntoString(openFileDialog(OFD_FILTER_GCODE).c_str());
 #endif
   return gcode_string;
-}
-
-int main(int argc, const char *argv[])
-{
-  /// prepare cmd line arguments
-  TCLAP::CmdLine   cmd(" Analyse Gcode and produce statistics", ' ', "1.0");
-
-  TCLAP::UnlabeledValueArg<std::string> gcArg("gcode", "gcode to load", false, "", "filename");
-  TCLAP::SwitchArg statsArg("s", "stats", "compute stats and return", false);
-  TCLAP::ValueArg<int> viewArg("v", "view", "use a predefined view for trackballUI", false, -1, "int");
-
-  std::string cmd_gcode = "";
-  bool cmd_stats = false;
-  int cmd_view = -1;
-
-  try
-  {
-    cmd.add(gcArg);
-    cmd.add(statsArg);
-    cmd.add(viewArg);
-    cmd.parse(argc, argv);
-
-    cmd_gcode = gcArg.getValue();
-    cmd_stats = statsArg.getValue();
-    cmd_view = viewArg.getValue();
-  }
-  catch (const TCLAP::ArgException & e)
-  {
-    std::cerr << "Error: " << e.error() << " for arg " << e.argId() << std::endl;
-  }
-  catch (...)
-  {
-    std::cerr << "Error: unknown exception caught" << std::endl;
-  }
-
-  /// init simple UI
-  TrackballUI::onRender = mainRender;
-  TrackballUI::onKeyPressed = mainKeyboard;
-  TrackballUI::onMouseButtonPressed = mainMouseButton;
-
-  TrackballUI::init(g_UIWidth+g_ScreenWidth, g_ScreenHeight);
-
-  // GL init
-  glEnable(GL_DEPTH_TEST);
-
-  // imgui
-  SimpleUI::bindImGui();
-  SimpleUI::onReshape(g_ScreenWidth + g_UIWidth, g_ScreenHeight);
-
-  // quad for shader invocation
-  g_GPUMesh_quad = AutoPtr<SimpleMesh>(new SimpleMesh());
-  g_GPUMesh_quad->begin(GPUMESH_TRIANGLELIST);
-  g_GPUMesh_quad->vertex_3(0, 0, 0);
-  g_GPUMesh_quad->vertex_3(1, 0, 0);
-  g_GPUMesh_quad->vertex_3(0, 1, 0);
-
-  g_GPUMesh_quad->vertex_3(0, 1, 0);
-  g_GPUMesh_quad->vertex_3(1, 0, 0);
-  g_GPUMesh_quad->vertex_3(1, 1, 0);
-  g_GPUMesh_quad->end();
-
-  // mesh for axes
-  makeAxisMesh();
-
-  // bed rendering
-  bed_init();
-
-  // shader for simple drawing
-#ifdef EMSCRIPTEN
-  g_ShaderSimple.emscripten = "precision mediump float;\n";
-#endif
-  g_ShaderSimple.init();
-
-  // shader for drawing deposited material
-#ifdef EMSCRIPTEN
-  g_ShaderDeposition.emscripten = "precision mediump float;\n";
-#endif
-  g_ShaderDeposition.init();
-
-#ifdef EMSCRIPTEN
-  g_ShaderFinal.emscripten = "precision mediump float;\n";
-#endif
-  g_ShaderFinal.init();
-  g_RT = RenderTarget2DRGBA_Ptr(new RenderTarget2DRGBA(g_RTWidth, g_RTHeight, GPUTEX_AUTOGEN_MIPMAP));
-  g_RT->bind();
-  glViewport(0, 0, g_RenderWidth, g_RenderHeight);
-  LibSL::GPUHelpers::clearScreen(LIBSL_COLOR_BUFFER | LIBSL_DEPTH_BUFFER, 0.0f, 0.0f, 0.0f);
-  g_RT->unbind();
-
-  g_GPUMesh_sphere = AutoPtr<MeshRenderer<mvf_mesh> >( new MeshRenderer<mvf_mesh>(shape_sphere( 1.0f, 12 )) );
-  g_GPUMesh_cylinder = AutoPtr<MeshRenderer<mvf_mesh> >(new MeshRenderer<mvf_mesh>(shape_cylinder(1.0f, 1.0f, 1.0f, 12)));
-
-  /// default view
-  TrackballUI::trackball().set(v3f(-g_BedSize[0]/2.0f, -g_BedSize[1] / 2.0f,-300.0f), v3f(0), quatf(v3f(1, 0, 0), -1.0f)*quatf(v3f(0, 0, 1), 0.0f));
-  TrackballUI::trackball().setCenter(v3f(g_BedSize[0] / 2.0f, g_BedSize[1] / 2.0f, 10.0f));
-  TrackballUI::trackball().setBallSpeed(0.0f);
-  TrackballUI::trackball().setAllowRoll(false);
-  TrackballUI::trackball().setUp(Trackball::Z_neg);
-
-  /// view selection
-  if (cmd_view >= 0) {
-    std::string view_file = "trackball.F0";
-    view_file += to_string(cmd_view);
-    TrackballUI::trackballLoad(view_file.c_str());
-  }
-
-
-  SimpleUI::initImGui();
-
-  /// load gcode
-  if (!cmd_gcode.empty()) {
-    g_GCode_string = loadFileIntoString(cmd_gcode.c_str());
-  }
-  else {
-    g_GCode_string = load_gcode();
-  }
-  session_start();
-
-  /// stats mode (generate stats without opening GUI
-  if (cmd_stats) {
-    Console::progressTextInit(g_LastLine);
-    while (!step_simulation(false)) { 
-      Console::progressTextUpdate(gcode_line());
-    }
-    Console::progressTextEnd();
-
-    Histogram hd;
-    for (auto h : g_DanglingHisto) {
-      ForIndex(i, h.second) { // totally stupid loop, but hey, no consequence and we reuse what we have
-        hd << h.first;
-      }
-    }
-    Histogram ho;
-    for (auto h : g_OverlapHisto) {
-      ForIndex(i, h.second) { // totally stupid loop, but hey, no consequence and we reuse what we have
-        ho << h.first;
-      }
-    }
-
-    std::cerr << "== unsupported ==" << std::endl;
-    hd.print();
-    std::cerr << "==  overlaps   ==" << std::endl;
-    ho.print();
-
-    exit(0);
-  }
-
-#ifdef EMSCRIPTEN
-  /// load gcode in editor window
-  std::string command = "setupEditor();";
-  emscripten_run_script(command.c_str());
-  }
-#endif
-
-  motion_start( g_FilamentDiameter );
-
-  printer_reset();
-
-  /// main loop
-  TrackballUI::loop();
-
-  SimpleUI::terminateImGui();
-  TrackballUI::shutdown();
-
-  return 0;
 }
 
 // ----------------------------------------------------------------

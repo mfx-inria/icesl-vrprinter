@@ -1,5 +1,3 @@
-// PB 2019-03-11 from SL 2018-07-03
-
 #pragma once
 
 #include <LibSL.h>
@@ -16,53 +14,77 @@ LIBSL_WIN32_FIX;
 #endif
 
 #ifndef EMSCRIPTEN
+  #include <tclap/CmdLine.h>
   #include "FileDialog.h"
   #ifdef _MSC_VER
     #define glActiveTexture glActiveTextureARB
   #endif
 #endif
 
-// ----------------------------------------------------------------
+#include "sphere_squash.h"
 
+// ----------------------------------------------------------------
 using namespace std;
-
 // ----------------------------------------------------------------
 
-int           g_UIWidth = 350; // width of the main ImGui window
+int           g_UIWidth = 350;
 
-int           g_ScreenWidth = 1024;  // dimensions of the main window
-int           g_ScreenHeight = 1024;
-
-int           g_RenderWidth = 1024;
-int           g_RenderHeight = 1024;
+int           g_ScreenWidth = 700;
+int           g_ScreenHeight = 700;
+int           g_RenderWidth = 700;
+int           g_RenderHeight = 700;
 
 int           g_RTWidth = 1024;
 int           g_RTHeight = 1024;
 
-v2f           g_BedSize(200.0f, 200.0f);
-
+v2f           g_BedSize(250.0f, 150.0f);
 float         g_FilamentDiameter = 1.75f;
 float         g_NozzleDiameter = 0.4f;
+const float   c_HeightFieldStep = 0.04f; // mm
 
-bool          g_EIsVolume = false;
+const float   c_ThicknessEpsilon = 0.001f; // 1 um
 
-float         g_TimeStep = 500.0f;
-float         g_GlobalTime = 0.0f;
+float         g_StatsHeightThres = 1.2f; // mm, ignored everything below regarding overlaps and dangling
 
+float         g_MmStep = g_NozzleDiameter * 0.5f;
+float         g_UserMmStep = 1000.0f;
 int           g_StartAtLine = 0;
-bool          g_ColorOverhangs = false;
+int           g_LastLine = 0;
 
-bool          g_Downloading = false;
-float         g_DownloadProgress = 0.0f;
+double        g_GlobalDepositionLength = 0.0;
+
+bool          g_ShowTrajectory = false;
+bool          g_ColorOverhangs = true;
+
+bool          g_AutoPause = false;
+float         g_AutoPauseDanglingLen = 5.0f;
+float         g_AutoPauseOverlapLen = 5.0f;
+
+bool          g_InDangling = false;
+double        g_InDanglingStart = 0.0;
+std::map<int, float> g_DanglingHisto;
+
+bool          g_InOverlap = false;
+double        g_InOverlapStart = 0.0;
+std::map<int, float> g_OverlapHisto;
+
+bool          g_DumpHeightField = false;
+double        g_DumpHeightFieldStartLen = 0.0;
+
+bool          g_Paused = false;
 
 std::string   g_GCode_string;
 
-std::vector<float> g_Flows(64, 0.0f);
-int                g_FlowsCount = 0;
-float              g_FlowsSample = 0.0f;
-std::vector<float> g_Speeds(64, 0.0f);
-int                g_SpeedsCount = 0;
-float              g_SpeedsSample = 0.0f;
+#include "simple.h"
+AutoBindShader::simple     g_ShaderSimple;
+#include "final.h"
+AutoBindShader::final      g_ShaderFinal;
+#include "deposition.h"
+AutoBindShader::deposition g_ShaderDeposition;
+
+AutoPtr<AutoBindShader::deposition> test;
+
+RenderTarget2DRGBA_Ptr g_RT;
 
 typedef GPUMESH_MVF1(mvf_vertex_3f)                mvf_mesh;
 typedef GPUMesh_VertexBuffer<mvf_mesh>             SimpleMesh;
@@ -73,42 +95,45 @@ AutoPtr<SimpleMesh>                      g_GPUMesh_axis;
 AutoPtr<MeshRenderer<mvf_mesh> >         g_GPUMesh_sphere;
 AutoPtr<MeshRenderer<mvf_mesh> >         g_GPUMesh_cylinder;
 
-#include "simple.h"
-AutoBindShader::simple     g_ShaderSimple;
-#include "final.h"
-AutoBindShader::final      g_ShaderFinal;
-#include "deposition.h"
-AutoBindShader::deposition g_ShaderDeposition;
-
-RenderTarget2DRGBA_Ptr g_RT;
-
 m4x4f  g_LastView = m4x4f::identity();
 bool   g_Rotating = false;
 bool   g_Dragging = false;
 float  g_Zoom = 1.0f;
 float  g_ZoomTarget = 1.0f;
 
-std::vector<v3f>                 g_Trajectory;
+std::vector<v3d>                 g_Trajectory;
 
 typedef struct
 {
-  float time;
-  float radius;
-  v3f   a;
-  v3f   b;
+  double deplength;
+  double radius;
+  v3d   a;
+  v3d   b;
 } t_height_segment;
 
 std::list<t_height_segment> g_HeightSegments;
 
-const float c_HeightFieldStep = 0.1f; // mm
-Array2D<float>   g_HeightField;
+AAB<3>                   g_HeightFieldBox;
 
-v3f    g_PrevPos(0.0f);
+Array2D<Tuple<float, 1> > g_HeightField;
+
+v3d    g_PrevPos(0.0);
 
 bool   g_ForceRedraw = true;
+bool   g_ForceClear = false;
 bool   g_FatalError = false;
 bool   g_FatalErrorAllowRestart = false;
 string g_FatalErrorMessage = "unkonwn error";
+
+bool   g_Downloading = false;
+float  g_DownloadProgress = 0.0f;
+
+std::vector<float> g_Flows(64, 0.0f);
+int                g_FlowsCount = 0;
+float              g_FlowsSample = 0.0f;
+std::vector<float> g_Speeds(64, 0.0f);
+int                g_SpeedsCount = 0;
+float              g_SpeedsSample = 0.0f;
 
 const float ZNear = 0.1f;
 const float ZFar = 500.0f;
@@ -159,7 +184,6 @@ void addBar(AutoPtr<T_Mesh> gpumesh, v3f a, v3f b, pair<v3f, v3f> uv, float sz =
   gpumesh->vertex_3(b00[0], b00[1], b00[2]);
   gpumesh->vertex_3(a01[0], a01[1], a01[2]);
 }
-
 // ----------------------------------------------------------------
 
 // ----------------------------------------------------------------
@@ -167,10 +191,18 @@ void addBar(AutoPtr<T_Mesh> gpumesh, v3f a, v3f b, pair<v3f, v3f> uv, float sz =
 
 void mainRender();
 void makeAxisMesh();
-float heightAt(const v3f& a, float r);
-void rasterizeDiskInHeightField(const v2i& p, float z, float r);
-void rasterizeInHeightField(const v3f& a, const v3f&b, float r);
 m4x4f alignAlongSegment(const v3f& p0, const v3f& p1);
+void rasterizeDiskInHeightField(const v2i& p, float z, float r);
+void rasterizeInHeightField(v3f a, const v3f& b, float r);
+
+float heightAt(v3f a, float r);
+float danglingAt(float max_th, const v3f& a, float r);
+float overlapAt(float th, const v3f& a, float r);
+
+// ----------------------------------------------------------------
+// Simulation
+
+bool step_simulation(bool gpu_draw);
 
 // ----------------------------------------------------------------
 // UI
@@ -184,14 +216,26 @@ void mainMouseButton(uint x, uint y, uint btn, uint flags);
 
 string load_gcode(); // load a gcode file and return it as a string
 string jsEncodeString(const char *strin);
+void session_start();
 void printer_reset();
 
 #ifdef EMSCRIPTEN
-void beginDownload();
+void beginDownload()
+{
+  g_Downloading = true;
+  std::remove("/print.gcode");
+}
 
-void setDownloadProgress(float progress);
+void setDownloadProgress(float progress)
+{
+  g_DownloadProgress = progress;
+  cout << "progress = " << progress << endl;
+}
 
-void endDownload();
+void endDownload()
+{
+  g_Downloading = false;
+}
 
 EMSCRIPTEN_BINDINGS(my_module) {
   emscripten::function("beginDownload", &beginDownload);
@@ -201,8 +245,88 @@ EMSCRIPTEN_BINDINGS(my_module) {
 #endif 
 
 // ----------------------------------------------------------------
-// main
+class GPUBead
+{
+private:
 
-int main(int argc, const char **argv);
+  bool m_Empty = true;
+
+  // last drawn point
+  float m_LastOverlap = 0.0f;
+  float m_LastDangling = 0.0f;
+  float m_LastTh = 0.0f;
+  float m_LastRadius = 0.0f;
+  v3f   m_LastPos;
+
+  void drawSegment(v3f a, v3f b, float th, float r, float dg, float ov)
+  {
+    double squash_t = min(th / 2.0, r);
+    double rs = disk_squashed_radius(r, squash_t);
+    g_ShaderDeposition.u_height.set((float)b[2]);
+    g_ShaderDeposition.u_thickness.set((float)th);
+    g_ShaderDeposition.u_radius.set((float)r);
+    g_ShaderDeposition.u_dangling.set(dg);
+    g_ShaderDeposition.u_overlap.set(ov);
+    g_ShaderDeposition.u_extruder.set(0.25f);
+    // add cylinder from previous
+    g_ShaderDeposition.u_model.set(
+      translationMatrix(v3f(0, 0, -(float)squash_t))
+      * alignAlongSegment(v3f(a), v3f(b))
+      * scaleMatrix(v3f((float)rs, (float)rs, 1))
+    );
+    g_GPUMesh_cylinder->render();
+    // add spheres
+    g_ShaderDeposition.u_model.set(
+      translationMatrix(v3f(a))
+      * translationMatrix(v3f(0, 0, -(float)squash_t))
+      * scaleMatrix(v3f((float)rs))
+    );
+    g_GPUMesh_sphere->render();
+    g_ShaderDeposition.u_model.set(
+      translationMatrix(v3f(b))
+      * translationMatrix(v3f(0, 0, -(float)squash_t))
+      * scaleMatrix(v3f((float)rs))
+    );
+    g_GPUMesh_sphere->render();
+  }
+
+public:
+
+  GPUBead() {}
+
+  void drawPoint(v3f p, float th, float r, float dg, float ov)
+  {
+    // draw segment
+    drawSegment(m_LastPos, p, th, r, dg, ov);
+    // record as last drawn
+    m_LastOverlap = ov;
+    m_LastDangling = dg;
+    m_LastTh = th;
+    m_LastRadius = r;
+    m_LastPos = p;
+  }
+
+  void addPoint(v3f p, float th, float r, float dg, float ov)
+  {
+    if (m_Empty) {
+      m_Empty = false;
+      // record as last drawn
+      m_LastOverlap = ov;
+      m_LastDangling = dg;
+      m_LastTh = th;
+      m_LastRadius = r;
+      m_LastPos = p;
+    }
+    else {
+      drawPoint(p, th, r, dg, ov);
+    }
+  }
+
+  void closeAny()
+  {
+    m_Empty = true;
+  }
+
+};
 
 // ----------------------------------------------------------------
