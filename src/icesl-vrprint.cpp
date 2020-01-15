@@ -813,16 +813,24 @@ bool step_simulation(bool gpu_draw)
         v2d nrm   = v2d(-delta[1], delta[0]);
         for (auto p : g_DanglingTrajectory) {
           float dev = dot(normalize_safe(v2d(p.pos - g_DanglingTrajectory.front().pos)), nrm);
-          if (abs(dev) > g_NozzleDiameter / 2.0f) {
+          if (abs(dev) > g_NozzleDiameter / 10.0f) {
             is_bridge = false; break;
           }
         }
         if (is_bridge) {
-          g_Paused = true;
+          //g_Paused = true;
           //g_Trajectory.clear();
           //for (auto p : g_DanglingTrajectory) {
           //  g_Trajectory.push_back(p.pos);
           //}
+          if (gpu_draw) {
+            // redraw orange
+            g_Bead.closeAny();
+            for (auto p : g_DanglingTrajectory) {
+              g_Bead.addPoint(v3f(p.pos), (float)p.th, (float)p.r, 1.0f, 1.0f);
+            }
+            g_Bead.closeAny();
+          }
         }
       }
       g_DanglingTrajectory.clear();
@@ -1304,6 +1312,8 @@ int main(int argc, const char **argv)
   motion_start( g_FilamentDiameter );
 
   printer_reset();
+
+  glDepthFunc(GL_LEQUAL);
 
   /// main loop
   TrackballUI::loop();
