@@ -723,7 +723,7 @@ bool step_simulation(bool gpu_draw)
 
     TrajPoint tj   = TrajPoint(pos, (float)th, (float)0.0f, dangling, overlap);
 
-    // std::cerr << gcode_line() << std::endl;
+    
 
     if (len > 1e-6 && !motion_is_travel()) {
 
@@ -769,7 +769,7 @@ bool step_simulation(bool gpu_draw)
       g_GlobalDepositionLength += len;
 
       // add pos to dangling section if potentially bridging
-      if (g_InDangling && g_InDanglingBridging) {
+      if (g_InDangling) {
         g_DanglingTrajectory.push_back(tj);
       }
 
@@ -805,7 +805,7 @@ bool step_simulation(bool gpu_draw)
       g_DanglingHisto[(int)dangling_len] += 1.0f;
       // bridge?
       bool is_bridge = false;
-      if (!is_travel_or_dangling && g_InDanglingBridging  // attached on both ends
+      if (!motion_is_travel() && g_InDanglingBridging  // attached on both ends
         && g_DanglingTrajectory.size() >= 2) {
         is_bridge = true;
         // verify deviation
@@ -819,10 +819,10 @@ bool step_simulation(bool gpu_draw)
         }
         if (is_bridge) {
           g_Paused = true;
-          g_Trajectory.clear();
-          for (auto p : g_DanglingTrajectory) {
-            g_Trajectory.push_back(p.pos);
-          }
+          //g_Trajectory.clear();
+          //for (auto p : g_DanglingTrajectory) {
+          //  g_Trajectory.push_back(p.pos);
+          //}
         }
       }
       g_DanglingTrajectory.clear();
@@ -955,6 +955,7 @@ void mainRender()
       int n = max(1,(int)round(g_UserMmStep / g_MmStep));
       ForIndex(sub, n) {
         step_simulation(true);
+        if (g_Paused) break;
       }
     }
 
@@ -996,8 +997,8 @@ void mainRender()
     g_ShaderFinal.end();
 
     // render trajectory
-    // if (g_ShowTrajectory && !g_Trajectory.empty()) {
-    if (!g_Trajectory.empty()) {
+    if (g_ShowTrajectory && !g_Trajectory.empty()) {
+    // if (!g_Trajectory.empty()) {
       glEnable(GL_BLEND);
       glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
       glDisable(GL_DEPTH_TEST);
