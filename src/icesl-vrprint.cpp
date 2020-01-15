@@ -13,6 +13,10 @@ NOTE: we assume there is no curved printing, eg z grows monotically
 
 // ----------------------------------------------------------------
 
+GPUBead g_Bead;
+
+// ----------------------------------------------------------------
+
 int main(int argc, const char* argv[])
 {
   /// prepare cmd line arguments
@@ -117,7 +121,6 @@ int main(int argc, const char* argv[])
     TrackballUI::trackballLoad(view_file.c_str());
   }
 
-
   SimpleUI::initImGui();
 
   /// load gcode
@@ -180,6 +183,21 @@ return 0;
 
 // ----------------------------------------------------------------
 
+std::string load_gcode() {
+  std::string gcode_string;
+#ifdef EMSCRIPTEN
+  emscripten_run_script("parseCommandLine();\n");
+  if (!g_Downloading) {
+    gcode_string = loadFileIntoString("./icesl.gcode");
+  }
+#else
+  gcode_string = loadFileIntoString(openFileDialog(OFD_FILTER_GCODE).c_str());
+#endif
+  return gcode_string;
+}
+
+// ----------------------------------------------------------------
+
 void printer_reset()
 {
   gcode_reset();
@@ -227,194 +245,6 @@ void session_start()
   g_HeightField.allocate(hszx, hszy);
   // reset printer
   printer_reset();
-}
-
-// ----------------------------------------------------------------
-
-void makeAxisMesh()
-{
-  g_GPUMesh_axis = AutoPtr<SimpleMesh>(new SimpleMesh());
-  g_GPUMesh_axis->begin(GPUMESH_TRIANGLELIST);
-  addBar(g_GPUMesh_axis, v3f(0, 0, 0), v3f(10, 0, 0), make_pair(v3f(0, 1, 0), v3f(0, 0, 1)), 0.5f);
-  addBar(g_GPUMesh_axis, v3f(0, 0, 0), v3f(0, 10, 0), make_pair(v3f(1, 0, 0), v3f(0, 0, 1)), 0.5f);
-  addBar(g_GPUMesh_axis, v3f(0, 0, 0), v3f(0, 0, 10), make_pair(v3f(1, 0, 0), v3f(0, 1, 0)), 0.5f);
-  g_GPUMesh_axis->end();
-}
-
-// ----------------------------------------------------------------
-
-void ImGuiPanel()
-{
-
-  if (g_Downloading) {
-    ImGui::SetNextWindowSize(ImVec2(300, 50));
-    ImGui::SetNextWindowPosCenter();
-    ImGui::Begin("Downloading ...");
-    ImGui::ProgressBar(g_DownloadProgress);
-    ImGui::End();
-  }
-
-  if (!g_FatalError) {
-
-    // imgui
-    if (g_Downloading) {
-      ImGui::SetNextWindowSize(ImVec2(300, 50));
-      ImGui::SetNextWindowPosCenter();
-      ImGui::Begin("Downloading ...");
-      ImGui::ProgressBar(g_DownloadProgress);
-      ImGui::End();
-    }
-    ImGui::SetNextWindowPos(ImVec2(0, 0), ImGuiSetCond_Once);
-    ImGui::SetNextWindowSize(ImVec2((float)g_UIWidth, 750), ImGuiSetCond_Once);
-    ImGui::Begin("Virtual 3D printer");
-    ImGui::PushItemWidth(200);
-
-    // printer setup
-    ImGui::SetNextTreeNodeOpen(true);
-    if (ImGui::CollapsingHeader("Printer")) {
-      ImGui::InputFloat("Filament diameter", &g_FilamentDiameter, 0.0f, 0.0f, 3);
-      g_FilamentDiameter = clamp(g_FilamentDiameter, 0.1f, 10.0f);
-      static float nozzleDiameter = g_NozzleDiameter;
-      ImGui::InputFloat("Nozzle diameter", &nozzleDiameter, 0.0f, 0.0f, 3);
-      g_NozzleDiameter = clamp(nozzleDiameter, c_HeightFieldStep * 2.0f, 10.0f);
-      ImGui::InputInt("Start at GCode line", &g_StartAtLine);
-      g_StartAtLine = max(0, min(g_StartAtLine, g_LastLine - 1));
-      if (ImGui::Button("Reset")) {
-        g_NozzleDiameter = nozzleDiameter;
-        printer_reset();
-        g_ForceRedraw = true;
-      }
-      ImGui::SameLine();
-      if (ImGui::Button("Clear below")) {
-        g_ForceClear = true;
-      }
-      ImGui::SameLine();
-      if (ImGui::Button("Dump")) {
-        g_DumpHeightField = true;
-        g_DumpHeightFieldStartLen = g_GlobalDepositionLength;
-      }
-    }
-    // control
-    ImGui::SetNextTreeNodeOpen(true);
-    if (ImGui::CollapsingHeader("Control")) {
-      ImGui::SliderFloat("Step (mm)", &g_UserMmStep, 0.001f, 1000.0f,"%.3f",3.0f);
-      ImGui::Checkbox("Show trajectory", &g_ShowTrajectory);
-      ImGui::Checkbox("Color overlaps (blue) and overhangs (red)", &g_ColorOverhangs);      
-    }
-    // status
-    ImGui::SetNextTreeNodeOpen(true);
-    if (ImGui::CollapsingHeader("Status")) {
-      int line = gcode_line();
-      ImGui::InputInt("GCode line", &line);
-      static v3f pos;
-      pos = v3f(motion_get_current_pos());
-      ImGui::InputFloat3("XYZ (mm)", &pos[0]);
-      // flow graph
-      double flow = motion_get_current_flow() * 1000.0;
-      g_FlowsSample += (float)flow;
-      g_FlowsCount++;
-      if (g_FlowsCount == 32) {
-        g_FlowsSample /= (float)g_FlowsCount;
-        g_Flows.erase(g_Flows.begin());
-        g_Flows.push_back(g_FlowsSample);
-        g_FlowsCount = 0;
-        g_FlowsSample = 0.0f;
-      }
-      ImGui::PlotLines("Flow (mm^3/sec)", &g_Flows[0], (int)g_Flows.size());
-      // speed graph
-      float speed = (float)gcode_speed();
-      g_SpeedsSample += speed;
-      g_SpeedsCount++;
-      if (g_SpeedsCount == 32) {
-        g_SpeedsSample /= (float)g_SpeedsCount;
-        g_Speeds.erase(g_Speeds.begin());
-        g_Speeds.push_back(g_SpeedsSample);
-        g_SpeedsCount  = 0;
-        g_SpeedsSample = 0.0f;
-      }
-      ImGui::PlotLines("Speed (mm/sec)", &g_Speeds[0], (int)g_Speeds.size());
-      // dangling histogram
-      {
-        static std::vector<float> histo; /// oh this is ugly, very ugly
-        int maxv = 0;
-        for (auto h : g_DanglingHisto) {
-          maxv = max(maxv, h.first);
-        }
-        histo.resize(maxv+1);
-        for (auto h : g_DanglingHisto) {
-          histo[h.first] = h.second;
-        }
-        ImGui::PlotHistogram("dangling (red) ", &histo[0], (int)histo.size());
-      }
-      // overlap histogram
-      {
-        static std::vector<float> histo; /// oh this is ugly, very ugly
-        int maxv = 0;
-        for (auto h : g_OverlapHisto) {
-          maxv = max(maxv, h.first);
-        }
-        histo.resize(maxv + 1);
-        for (auto h : g_OverlapHisto) {
-          histo[h.first] = h.second;
-        }
-        ImGui::PlotHistogram("overlaps (blue)", &histo[0], (int)histo.size());
-      }
-    }
-    // pause
-    ImGui::SetNextTreeNodeOpen(true);
-    if (ImGui::CollapsingHeader("Pause")) {
-      if (g_Paused) {
-        if (ImGui::Button("Resume")) {
-          g_Paused = false;
-        }
-      } else {
-        if (ImGui::Button("Stop")) {
-          g_Paused = true;
-        }
-      }
-      ImGui::Checkbox("Auto pause", &g_AutoPause);
-      ImGui::InputFloat("overhang >", &g_AutoPauseDanglingLen, 1.0f, 1000.0f);
-      ImGui::InputFloat("overlap  >", &g_AutoPauseOverlapLen, 1.0f, 1000.0f);
-    }
-
-    ImGui::End();
-
-  } else { // fatal error
-
-    ImGui::SetNextWindowSize(ImVec2(600, 50));
-    ImGui::SetNextWindowPosCenter();
-    ImGui::Begin("Unsupported");
-    ImGui::Text("%s", g_FatalErrorMessage.c_str());
-    ImGui::End();
-
-  }
-
-  ImGui::Render();
-}
-
-// ----------------------------------------------------------------
-
-string jsEncodeString(const char *strin)
-{
-  string str;
-  int i = 0;
-  while (strin[i] != '\0') {
-    if (strin[i] == '\\') {
-      str = str + "\\\\";
-    } else if (strin[i] == '\n') {
-      str = str + "\\n";
-    } else if (strin[i] == '\r') {
-
-    } else if (strin[i] == '&') {
-      str = str + "\\&";
-    } else if (strin[i] == '\'') {
-      str = str + "\\'";
-    } else {
-      str = str + strin[i];
-    }
-    i++;
-  }
-  return str;
 }
 
 // ----------------------------------------------------------------
@@ -535,11 +365,6 @@ float overlapAt(float th, const v3f &a, float r)
   }
   return o / (float)(num);
 }
-
-// ----------------------------------------------------------------
-
-
-GPUBead g_Bead;
 
 // ----------------------------------------------------------------
 
@@ -938,6 +763,171 @@ void mainRender()
 
 // ----------------------------------------------------------------
 
+void makeAxisMesh()
+{
+  g_GPUMesh_axis = AutoPtr<SimpleMesh>(new SimpleMesh());
+  g_GPUMesh_axis->begin(GPUMESH_TRIANGLELIST);
+  addBar(g_GPUMesh_axis, v3f(0, 0, 0), v3f(10, 0, 0), make_pair(v3f(0, 1, 0), v3f(0, 0, 1)), 0.5f);
+  addBar(g_GPUMesh_axis, v3f(0, 0, 0), v3f(0, 10, 0), make_pair(v3f(1, 0, 0), v3f(0, 0, 1)), 0.5f);
+  addBar(g_GPUMesh_axis, v3f(0, 0, 0), v3f(0, 0, 10), make_pair(v3f(1, 0, 0), v3f(0, 1, 0)), 0.5f);
+  g_GPUMesh_axis->end();
+}
+
+// ----------------------------------------------------------------
+
+void ImGuiPanel()
+{
+
+  if (g_Downloading) {
+    ImGui::SetNextWindowSize(ImVec2(300, 50));
+    ImGui::SetNextWindowPosCenter();
+    ImGui::Begin("Downloading ...");
+    ImGui::ProgressBar(g_DownloadProgress);
+    ImGui::End();
+  }
+
+  if (!g_FatalError) {
+
+    // imgui
+    if (g_Downloading) {
+      ImGui::SetNextWindowSize(ImVec2(300, 50));
+      ImGui::SetNextWindowPosCenter();
+      ImGui::Begin("Downloading ...");
+      ImGui::ProgressBar(g_DownloadProgress);
+      ImGui::End();
+    }
+    ImGui::SetNextWindowPos(ImVec2(0, 0), ImGuiSetCond_Once);
+    ImGui::SetNextWindowSize(ImVec2((float)g_UIWidth, 750), ImGuiSetCond_Once);
+    ImGui::Begin("Virtual 3D printer");
+    ImGui::PushItemWidth(200);
+
+    // printer setup
+    ImGui::SetNextTreeNodeOpen(true);
+    if (ImGui::CollapsingHeader("Printer")) {
+      ImGui::InputFloat("Filament diameter", &g_FilamentDiameter, 0.0f, 0.0f, 3);
+      g_FilamentDiameter = clamp(g_FilamentDiameter, 0.1f, 10.0f);
+      static float nozzleDiameter = g_NozzleDiameter;
+      ImGui::InputFloat("Nozzle diameter", &nozzleDiameter, 0.0f, 0.0f, 3);
+      g_NozzleDiameter = clamp(nozzleDiameter, c_HeightFieldStep * 2.0f, 10.0f);
+      ImGui::InputInt("Start at GCode line", &g_StartAtLine);
+      g_StartAtLine = max(0, min(g_StartAtLine, g_LastLine - 1));
+      if (ImGui::Button("Reset")) {
+        g_NozzleDiameter = nozzleDiameter;
+        printer_reset();
+        g_ForceRedraw = true;
+      }
+      ImGui::SameLine();
+      if (ImGui::Button("Clear below")) {
+        g_ForceClear = true;
+      }
+      ImGui::SameLine();
+      if (ImGui::Button("Dump")) {
+        g_DumpHeightField = true;
+        g_DumpHeightFieldStartLen = g_GlobalDepositionLength;
+      }
+    }
+    // control
+    ImGui::SetNextTreeNodeOpen(true);
+    if (ImGui::CollapsingHeader("Control")) {
+      ImGui::SliderFloat("Step (mm)", &g_UserMmStep, 0.001f, 1000.0f, "%.3f", 3.0f);
+      ImGui::Checkbox("Show trajectory", &g_ShowTrajectory);
+      ImGui::Checkbox("Color overlaps (blue) and overhangs (red)", &g_ColorOverhangs);
+    }
+    // status
+    ImGui::SetNextTreeNodeOpen(true);
+    if (ImGui::CollapsingHeader("Status")) {
+      int line = gcode_line();
+      ImGui::InputInt("GCode line", &line);
+      static v3f pos;
+      pos = v3f(motion_get_current_pos());
+      ImGui::InputFloat3("XYZ (mm)", &pos[0]);
+      // flow graph
+      double flow = motion_get_current_flow() * 1000.0;
+      g_FlowsSample += (float)flow;
+      g_FlowsCount++;
+      if (g_FlowsCount == 32) {
+        g_FlowsSample /= (float)g_FlowsCount;
+        g_Flows.erase(g_Flows.begin());
+        g_Flows.push_back(g_FlowsSample);
+        g_FlowsCount = 0;
+        g_FlowsSample = 0.0f;
+      }
+      ImGui::PlotLines("Flow (mm^3/sec)", &g_Flows[0], (int)g_Flows.size());
+      // speed graph
+      float speed = (float)gcode_speed();
+      g_SpeedsSample += speed;
+      g_SpeedsCount++;
+      if (g_SpeedsCount == 32) {
+        g_SpeedsSample /= (float)g_SpeedsCount;
+        g_Speeds.erase(g_Speeds.begin());
+        g_Speeds.push_back(g_SpeedsSample);
+        g_SpeedsCount = 0;
+        g_SpeedsSample = 0.0f;
+      }
+      ImGui::PlotLines("Speed (mm/sec)", &g_Speeds[0], (int)g_Speeds.size());
+      // dangling histogram
+      {
+        static std::vector<float> histo; /// oh this is ugly, very ugly
+        int maxv = 0;
+        for (auto h : g_DanglingHisto) {
+          maxv = max(maxv, h.first);
+        }
+        histo.resize(maxv + 1);
+        for (auto h : g_DanglingHisto) {
+          histo[h.first] = h.second;
+        }
+        ImGui::PlotHistogram("dangling (red) ", &histo[0], (int)histo.size());
+      }
+      // overlap histogram
+      {
+        static std::vector<float> histo; /// oh this is ugly, very ugly
+        int maxv = 0;
+        for (auto h : g_OverlapHisto) {
+          maxv = max(maxv, h.first);
+        }
+        histo.resize(maxv + 1);
+        for (auto h : g_OverlapHisto) {
+          histo[h.first] = h.second;
+        }
+        ImGui::PlotHistogram("overlaps (blue)", &histo[0], (int)histo.size());
+      }
+    }
+    // pause
+    ImGui::SetNextTreeNodeOpen(true);
+    if (ImGui::CollapsingHeader("Pause")) {
+      if (g_Paused) {
+        if (ImGui::Button("Resume")) {
+          g_Paused = false;
+        }
+      }
+      else {
+        if (ImGui::Button("Stop")) {
+          g_Paused = true;
+        }
+      }
+      ImGui::Checkbox("Auto pause", &g_AutoPause);
+      ImGui::InputFloat("overhang >", &g_AutoPauseDanglingLen, 1.0f, 1000.0f);
+      ImGui::InputFloat("overlap  >", &g_AutoPauseOverlapLen, 1.0f, 1000.0f);
+    }
+
+    ImGui::End();
+
+  }
+  else { // fatal error
+
+    ImGui::SetNextWindowSize(ImVec2(600, 50));
+    ImGui::SetNextWindowPosCenter();
+    ImGui::Begin("Unsupported");
+    ImGui::Text("%s", g_FatalErrorMessage.c_str());
+    ImGui::End();
+
+  }
+
+  ImGui::Render();
+}
+
+// ----------------------------------------------------------------
+
 void mainKeyboard(unsigned char key)
 {
   if (key == 'e')      g_ZoomTarget = g_ZoomTarget*1.1f;
@@ -966,21 +956,6 @@ void mainMouseButton(uint x, uint y, uint btn, uint flags)
     }
   }
 
-}
-
-// ----------------------------------------------------------------
-
-std::string load_gcode() {
-  std::string gcode_string;
-#ifdef EMSCRIPTEN
-  emscripten_run_script("parseCommandLine();\n");
-  if (!g_Downloading) {
-    gcode_string = loadFileIntoString("./icesl.gcode");
-  }
-#else
-  gcode_string = loadFileIntoString(openFileDialog(OFD_FILTER_GCODE).c_str());
-#endif
-  return gcode_string;
 }
 
 // ----------------------------------------------------------------

@@ -215,7 +215,6 @@ void mainMouseButton(uint x, uint y, uint btn, uint flags);
 // utilities
 
 string load_gcode(); // load a gcode file and return it as a string
-string jsEncodeString(const char *strin);
 void session_start();
 void printer_reset();
 
@@ -241,6 +240,34 @@ EMSCRIPTEN_BINDINGS(my_module) {
   emscripten::function("beginDownload", &beginDownload);
   emscripten::function("setDownloadProgress", &setDownloadProgress);
   emscripten::function("endDownload", &endDownload);
+}
+
+string jsEncodeString(const char* strin)
+{
+  string str;
+  int i = 0;
+  while (strin[i] != '\0') {
+    if (strin[i] == '\\') {
+      str = str + "\\\\";
+    }
+    else if (strin[i] == '\n') {
+      str = str + "\\n";
+    }
+    else if (strin[i] == '\r') {
+
+    }
+    else if (strin[i] == '&') {
+      str = str + "\\&";
+    }
+    else if (strin[i] == '\'') {
+      str = str + "\\'";
+    }
+    else {
+      str = str + strin[i];
+    }
+    i++;
+  }
+  return str;
 }
 #endif 
 
