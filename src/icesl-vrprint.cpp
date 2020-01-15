@@ -590,6 +590,7 @@ private:
   float m_LastTh = 0.0f;
   float m_LastRadius = 0.0f;
   v3f   m_LastPos;
+  bool  m_IsBridge = false;
 
   void drawSegment(v3f a,v3f b,float th,float r,float dg,float ov)
   {
@@ -601,6 +602,7 @@ private:
     g_ShaderDeposition.u_dangling.set(dg);
     g_ShaderDeposition.u_overlap.set(ov);
     g_ShaderDeposition.u_extruder.set(0.25f);
+    g_ShaderDeposition.u_bridge.set(m_IsBridge?1.0f:0.0f);
     // add cylinder from previous
     g_ShaderDeposition.u_model.set(
       translationMatrix(v3f(0, 0, -(float)squash_t))
@@ -657,6 +659,10 @@ public:
   void closeAny()
   {
     m_Empty = true;
+  }
+
+  void setIsBridge(bool b) {
+    m_IsBridge = b;
   }
 
 };
@@ -826,10 +832,12 @@ bool step_simulation(bool gpu_draw)
           if (gpu_draw) {
             // redraw orange
             g_Bead.closeAny();
+            g_Bead.setIsBridge(true);
             for (auto p : g_DanglingTrajectory) {
-              g_Bead.addPoint(v3f(p.pos), (float)p.th, (float)p.r, 1.0f, 1.0f);
+              g_Bead.addPoint(v3f(p.pos), (float)p.th, (float)p.r, 0.0f, 0.0f);
             }
             g_Bead.closeAny();
+            g_Bead.setIsBridge(false);
           }
         }
       }
