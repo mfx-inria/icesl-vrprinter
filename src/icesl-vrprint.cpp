@@ -27,12 +27,12 @@ int main(int argc, const char* argv[])
 
   TCLAP::UnlabeledValueArg<std::string> gcArg("gcode", "gcode to load", false, "", "filename");
   TCLAP::SwitchArg statsArg("s", "stats", "compute stats and return", false);
-  TCLAP::SwitchArg export_statsArg("e", "export", "export computed stats to a latex file", false);
+  TCLAP::ValueArg<float> export_statsArg("e", "export", "export and filter (percent to keep: 0.0 to 1.0) computed stats to a latex file", false, -1.0f, "float");
   TCLAP::ValueArg<int> viewArg("v", "view", "use a predefined view for trackballUI", false, -1, "int");
 
   std::string cmd_gcode = "";
   bool cmd_stats = false;
-  bool cmd_export_stats = false;
+  float cmd_export_stats = 1.0f;
   int cmd_view = -1;
 
   try
@@ -155,9 +155,9 @@ int main(int argc, const char* argv[])
     ho.print();
 
     // export as a .tex histogram
-    if (cmd_export_stats) {
-      export_histogram("dangling", gen_histogram(g_DanglingHisto, 0.98f));
-      export_histogram("overlap", gen_histogram(g_OverlapHisto, 0.98f));
+    if (cmd_export_stats != -1.0f) {
+      export_histogram("dangling", gen_histogram(g_DanglingHisto, cmd_export_stats));
+      export_histogram("overlap", gen_histogram(g_OverlapHisto, cmd_export_stats));
     }
 
     exit(0);
@@ -231,10 +231,12 @@ Histogram gen_histogram(std::map<int, float> map, float filter) {
   }
 
   Histogram h;
+  int n = 0;
   for (auto _m : t_map) {
     ForIndex(i, _m.second) { // totally stupid loop, but hey, no consequence and we reuse what we have
-      h << _m.first;
+      h << n;
     }
+    n++;
   }
 
   return h;
