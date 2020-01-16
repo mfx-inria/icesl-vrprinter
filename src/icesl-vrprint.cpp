@@ -147,18 +147,8 @@ int main(int argc, const char* argv[])
     }
     Console::progressTextEnd();
 
-    Histogram hd;
-    for (auto h : g_DanglingHisto) {
-      ForIndex(i, h.second) { // totally stupid loop, but hey, no consequence and we reuse what we have
-        hd << h.first;
-      }
-    }
-    Histogram ho;
-    for (auto h : g_OverlapHisto) {
-      ForIndex(i, h.second) { // totally stupid loop, but hey, no consequence and we reuse what we have
-        ho << h.first;
-      }
-    }
+    Histogram hd = gen_histogram(g_DanglingHisto);
+    Histogram ho = gen_histogram(g_OverlapHisto);
     std::cerr << Console::green << "\n== unsupported ==" << Console::gray << std::endl;
     hd.print();
     std::cerr << Console::green << "==  overlaps   ==" << Console::gray << std::endl;
@@ -166,8 +156,8 @@ int main(int argc, const char* argv[])
 
     // export as a .tex histogram
     if (cmd_export_stats) {
-      export_histogram("dangling", hd);
-      export_histogram("overlap", ho);
+      export_histogram("dangling", gen_histogram(g_DanglingHisto, 0.98f));
+      export_histogram("overlap", gen_histogram(g_OverlapHisto, 0.98f));
     }
 
     exit(0);
@@ -219,17 +209,52 @@ std::string load_gcode(std::string file) {
 
 // ----------------------------------------------------------------
 
+Histogram gen_histogram(std::map<int, float> map, float filter) {
+  std::map<int, float> t_map = map;
+  std::map<int, float> data_percent;
+  std::map<int, float>::iterator it;
+  // computing summ
+  int summ = 0;
+  for (auto _m : t_map) {
+    summ += _m.second;
+  }
+  // computing percentages
+  for (auto _m : t_map) {
+    float p = (_m.second / summ);
+    data_percent.emplace(std::pair<int, float>(_m.first, p));
+  }
+  for (auto _m : data_percent) {
+    if (_m.second <= 1.0f - filter) {
+      it = t_map.find(_m.first);
+      t_map.erase(it);
+    }
+  }
+
+  Histogram h;
+  for (auto _m : t_map) {
+    ForIndex(i, _m.second) { // totally stupid loop, but hey, no consequence and we reuse what we have
+      h << _m.first;
+    }
+  }
+
+  return h;
+}
+
+// ----------------------------------------------------------------
+
 void export_histogram(std::string fname, Histogram h) {
-  std::string h_values = "";
-
-
+  // prepare additionnal informations for the histogram
+  std::string y_label = fname;
+  // prepare full file name
   fname += ".tex";
   fname = "_" + fname;
   fname = g_GCode_path.c_str() + fname;
+
+  // generate latex file
   ofstream file (fname);
   if (file.is_open()) {
     std::cerr << Console::blue << "Generate statistics file : " << fname << Console::gray << std::endl;
-    h.printAsTex(file,50);
+    h.printAsTex(file, "", "", y_label);
     file.close();
   }
   else {
