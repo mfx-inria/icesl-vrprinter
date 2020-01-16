@@ -223,6 +223,7 @@ Histogram gen_histogram(std::map<int, float> map, float filter) {
     float p = (_m.second / summ);
     data_percent.emplace(std::pair<int, float>(_m.first, p));
   }
+  // filter out too low values based on the filter
   for (auto _m : data_percent) {
     if (_m.second <= 1.0f - filter) {
       it = t_map.find(_m.first);
@@ -231,7 +232,7 @@ Histogram gen_histogram(std::map<int, float> map, float filter) {
   }
 
   Histogram h;
-  int n = 0;
+  int n = 0; // re-do the indexing, since we delete some entries when filtering
   for (auto _m : t_map) {
     ForIndex(i, _m.second) { // totally stupid loop, but hey, no consequence and we reuse what we have
       h << n;
