@@ -62,7 +62,22 @@ float         g_AutoPauseOverlapLen = 5.0f;
 
 bool          g_InDangling = false;
 double        g_InDanglingStart = 0.0;
+bool          g_InDanglingBridging = false;
 std::map<int, float> g_DanglingHisto;
+
+class TrajPoint {
+public:
+  v3d   pos;
+  float th;
+  float r;
+  float ov;
+  float dg;
+  TrajPoint(v3d _pos, float _th, float _r, float _ov, float _dg) :
+    pos(_pos), th(_th), r(_r), ov(_ov), dg(_dg) {}
+};
+
+std::vector<TrajPoint> g_DanglingTrajectory;
+
 
 bool          g_InOverlap = false;
 double        g_InOverlapStart = 0.0;
@@ -120,6 +135,9 @@ AAB<3>                   g_HeightFieldBox;
 Array2D<Tuple<float, 1> > g_HeightField;
 
 v3d    g_PrevPos(0.0);
+v3d    g_PrevPrevPos(0.0);
+bool   g_PrevWasTravelOrDangling = false;
+
 
 bool   g_ForceRedraw = true;
 bool   g_ForceClear = false;
@@ -289,6 +307,7 @@ private:
   float m_LastTh = 0.0f;
   float m_LastRadius = 0.0f;
   v3f   m_LastPos;
+  bool  m_IsBridge = false;
 
   void drawSegment(v3f a, v3f b, float th, float r, float dg, float ov)
   {
@@ -300,6 +319,7 @@ private:
     g_ShaderDeposition.u_dangling.set(dg);
     g_ShaderDeposition.u_overlap.set(ov);
     g_ShaderDeposition.u_extruder.set(0.25f);
+    g_ShaderDeposition.u_bridge.set(m_IsBridge ? 1.0f : 0.0f);
     // add cylinder from previous
     g_ShaderDeposition.u_model.set(
       translationMatrix(v3f(0, 0, -(float)squash_t))
@@ -357,6 +377,10 @@ public:
   void closeAny()
   {
     m_Empty = true;
+  }
+
+  void setIsBridge(bool b) {
+    m_IsBridge = b;
   }
 
 };

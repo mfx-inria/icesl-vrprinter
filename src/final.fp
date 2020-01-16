@@ -52,13 +52,18 @@ void main()
   if (u_color_overhangs == 1) {
     float d = tex.z;
     float o = 0.0;
-    if (d >= 0.5) {
-      o = (d - 0.5)*2.0; 
-      d = 0.0;
+    vec3 clr;
+    if (d == 1.0) {
+      clr = vec3(0.7, 0.7,0.0);
     } else {
-      d = d * 2.0;
+      if (d >= 0.5) {
+        o = (d - 0.5) * 2.0;
+        d = 0.0;
+      } else {
+        d = d * 2.0;
+      }
+      clr = vec3(1.0 - o, 1.0 - d - o, 1.0 - d);
     }
-    vec3 clr = vec3(1.0 - o,1.0 - d - o,1.0 - d);
     gl_FragColor = vec4(ao * clr * nrm.zzz, 1.0);
   } else {
     if (tex.w < 0.5) {

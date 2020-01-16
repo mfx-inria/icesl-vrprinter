@@ -174,6 +174,8 @@ motion_start(g_FilamentDiameter);
 
 printer_reset();
 
+glDepthFunc(GL_LEQUAL);
+
 /// main loop
 TrackballUI::loop();
 
@@ -285,6 +287,8 @@ void printer_reset()
 {
   gcode_reset();
   g_PrevPos      = v3d(0.0);
+  g_PrevPrevPos  = v3d(0.0);
+
   g_Trajectory    .clear();
   g_HeightSegments.clear();
   g_GlobalDepositionLength = 0.0f;
@@ -300,7 +304,9 @@ void printer_reset()
   g_HeightField.fill((float)prev_z);
   motion_reset(g_FilamentDiameter);
   // stats
+  g_DanglingTrajectory.clear();
   g_InDangling = false;
+  g_InDanglingBridging = false;
   g_DanglingHisto.clear();
   g_InOverlap = false;
   g_OverlapHisto.clear();
@@ -507,7 +513,7 @@ bool step_simulation(bool gpu_draw)
     float dangling = 0.0f;
     float overlap  = 0.0f;
 
-    // std::cerr << gcode_line() << std::endl;
+    TrajPoint tj   = TrajPoint(pos, (float)th, (float)0.0f, dangling, overlap);
 
     if (len > 1e-6 && !motion_is_travel()) {
 
@@ -521,6 +527,8 @@ bool step_simulation(bool gpu_draw)
       double squash_t = min(th / 2.0, r);
       double rs = disk_squashed_radius(r, squash_t);
       double max_th = motion_get_current_e_per_xyz() * cs / g_NozzleDiameter;
+
+      tj = TrajPoint(pos, (float)th, (float)r, dangling, overlap);
 
       //if (rs > 0.3f) {
       //  std::cerr << sprint("z %.6f th %.6f th_prev %.6f rs %.6f \n", (float)pos[2], (float)th, (float)th_prev, (float)rs);
@@ -538,7 +546,7 @@ bool step_simulation(bool gpu_draw)
       if (pos[2] > g_StatsHeightThres) {
 
         dangling = danglingAt((float)max_th, v3f(pos), (float)rs);
-        overlap = overlapAt((float)th, v3f(pos), (float)rs - raster_erode);
+        overlap  = overlapAt((float)th, v3f(pos), (float)rs - raster_erode);
 
         // dangling only if > 60%
         dangling = max(dangling - 0.6f, 0.0f) / 0.4f;
@@ -549,6 +557,11 @@ bool step_simulation(bool gpu_draw)
 
       // add segment to global length
       g_GlobalDepositionLength += len;
+
+      // add pos to dangling section if potentially bridging
+      if (g_InDangling) {
+        g_DanglingTrajectory.push_back(tj);
+      }
 
       if (gpu_draw) {
         g_Bead.addPoint(v3f(pos), (float)th, (float)r, dangling, overlap);
@@ -568,10 +581,11 @@ bool step_simulation(bool gpu_draw)
       }
     }
 
-    g_PrevPos = pos;
+    bool is_travel_or_dangling = motion_is_travel() || (dangling > 0.0);
 
     // stats
     if (g_InDangling && dangling == 0.0f) {
+      // exit dangling
       g_InDangling = false;
       double dangling_len = (g_GlobalDepositionLength - g_InDanglingStart);
       if (g_AutoPause && dangling_len >= g_AutoPauseDanglingLen) {
@@ -579,9 +593,42 @@ bool step_simulation(bool gpu_draw)
       }
       dangling_len = round(dangling_len / 0.1); // quantize
       g_DanglingHisto[(int)dangling_len] += 1.0f;
-    
+      // bridge?
+      bool is_bridge = false;
+      if (!motion_is_travel() && g_InDanglingBridging  // attached on both ends
+        && g_DanglingTrajectory.size() >= 2) {
+        is_bridge = true;
+        // verify deviation
+        v2d delta = normalize_safe(v2d(g_DanglingTrajectory.back().pos - g_DanglingTrajectory.front().pos));
+        v2d nrm   = v2d(-delta[1], delta[0]);
+        for (auto p : g_DanglingTrajectory) {
+          float dev = dot(normalize_safe(v2d(p.pos - g_DanglingTrajectory.front().pos)), nrm);
+          if (abs(dev) > g_NozzleDiameter / 10.0f) {
+            is_bridge = false; break;
+          }
+        }
+        if (is_bridge) {
+          //g_Paused = true;
+          //g_Trajectory.clear();
+          //for (auto p : g_DanglingTrajectory) {
+          //  g_Trajectory.push_back(p.pos);
+          //}
+          if (gpu_draw) {
+            // redraw orange
+            g_Bead.closeAny();
+            g_Bead.setIsBridge(true);
+            for (auto p : g_DanglingTrajectory) {
+              g_Bead.addPoint(v3f(p.pos), (float)p.th, (float)p.r, 0.0f, 0.0f);
+            }
+            g_Bead.closeAny();
+            g_Bead.setIsBridge(false);
+          }
+        }
+      }
+      g_DanglingTrajectory.clear();
     }
     if (g_InOverlap && overlap == 0.0f) {
+      // exit overlap
       g_InOverlap = false;
       double overlap_len = (g_GlobalDepositionLength - g_InOverlapStart);
       if (g_AutoPause && overlap_len >= g_AutoPauseOverlapLen) {
@@ -591,11 +638,17 @@ bool step_simulation(bool gpu_draw)
       g_OverlapHisto[(int)overlap_len] += 1.0f;
     }
     if (!g_InDangling && dangling > 0.0) {
-      g_InDangling = true;
-      g_InDanglingStart = g_GlobalDepositionLength;
+      // enter dangling
+      g_DanglingTrajectory.clear();
+      sl_assert(tj.r > 0.0f);
+      g_DanglingTrajectory.push_back(tj);
+      g_InDangling          = true;
+      g_InDanglingStart     = g_GlobalDepositionLength;
+      g_InDanglingBridging  = !g_PrevWasTravelOrDangling;
     }
     if (!g_InOverlap && overlap > 0.0) {
-      g_InOverlap = true;
+      // enter overlap
+      g_InOverlap      = true;
       g_InOverlapStart = g_GlobalDepositionLength;
     }
 
@@ -614,6 +667,11 @@ bool step_simulation(bool gpu_draw)
       }
     }
 #endif
+
+    // prepare next
+    g_PrevWasTravelOrDangling = is_travel_or_dangling;
+    g_PrevPrevPos = g_PrevPos;
+    g_PrevPos = pos;
 
   } // iter
   return false;
@@ -694,6 +752,7 @@ void mainRender()
       int n = max(1,(int)round(g_UserMmStep / g_MmStep));
       ForIndex(sub, n) {
         step_simulation(true);
+        if (g_Paused) break;
       }
     }
 
@@ -736,6 +795,7 @@ void mainRender()
 
     // render trajectory
     if (g_ShowTrajectory && !g_Trajectory.empty()) {
+    // if (!g_Trajectory.empty()) {
       glEnable(GL_BLEND);
       glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
       glDisable(GL_DEPTH_TEST);
