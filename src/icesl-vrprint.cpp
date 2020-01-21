@@ -147,8 +147,9 @@ int main(int argc, const char* argv[])
     }
     Console::progressTextEnd();
 
-    Histogram hd = gen_histogram(g_DanglingHisto);
-    Histogram ho = gen_histogram(g_OverlapHisto);
+    Histogram hd, ho;
+    gen_histogram(g_DanglingHisto, hd);
+    gen_histogram(g_OverlapHisto, ho);
     std::cerr << Console::green << "\n== unsupported ==" << Console::gray << std::endl;
     hd.print();
     std::cerr << Console::green << "==  overlaps   ==" << Console::gray << std::endl;
@@ -156,8 +157,10 @@ int main(int argc, const char* argv[])
 
     // export as a .tex histogram
     if (cmd_export_stats != -1.0f) {
-      export_histogram("dangling", gen_histogram(g_DanglingHisto, cmd_export_stats));
-      export_histogram("overlap", gen_histogram(g_OverlapHisto, cmd_export_stats));
+      gen_histogram(g_DanglingHisto, hd, cmd_export_stats);
+      gen_histogram(g_OverlapHisto, ho, cmd_export_stats);
+      export_histogram("dangling", hd);
+      export_histogram("overlap", ho);
     }
 
     exit(0);
@@ -211,7 +214,7 @@ std::string load_gcode(std::string file) {
 
 // ----------------------------------------------------------------
 
-Histogram gen_histogram(std::map<int, float> map, float filter) {
+void gen_histogram(std::map<int, float> &map, Histogram &histo, float filter) {
   std::map<int, float> t_map = map;
   std::map<int, float> data_percent;
   std::map<int, float>::iterator it;
@@ -233,21 +236,19 @@ Histogram gen_histogram(std::map<int, float> map, float filter) {
     }
   }
 
-  Histogram h;
+  histo;
   int n = 0; // re-do the indexing, since we delete some entries when filtering
   for (auto _m : t_map) {
     ForIndex(i, _m.second) { // totally stupid loop, but hey, no consequence and we reuse what we have
-      h << n;
+      histo << n;
     }
     n++;
   }
-
-  return h;
 }
 
 // ----------------------------------------------------------------
 
-void export_histogram(std::string fname, Histogram h) {
+void export_histogram(std::string fname, Histogram &h) {
   // prepare additionnal informations for the histogram
   std::string y_label = fname;
   // prepare full file name
@@ -259,7 +260,7 @@ void export_histogram(std::string fname, Histogram h) {
   ofstream file (fname);
   if (file.is_open()) {
     std::cerr << Console::blue << "Generate statistics file : " << fname << Console::gray << std::endl;
-    h.printAsTex(file, "", "", y_label);
+    h.printAsTex(file, "", "", y_label.c_str());
     file.close();
   }
   else {
