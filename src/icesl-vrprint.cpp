@@ -57,6 +57,45 @@ int main(int argc, const char* argv[])
     std::cerr << "Error: unknown exception caught" << std::endl;
   }
 
+  /// load gcode
+  if (!cmd_gcode.empty()) {
+    g_GCode_string = load_gcode(cmd_gcode.c_str());
+  }
+  else {
+    g_GCode_string = load_gcode();
+  }
+
+  session_start();
+
+#ifndef EMSCRIPTEN
+  /// stats mode (generate stats without opening GUI
+  if (cmd_stats) {
+    Console::progressTextInit(g_LastLine);
+    while (!step_simulation(false)) {
+      Console::progressTextUpdate(gcode_line());
+    }
+    Console::progressTextEnd();
+
+    Histogram hd, ho;
+    gen_histogram(g_DanglingHisto, hd);
+    gen_histogram(g_OverlapHisto, ho);
+    std::cerr << Console::green << "\n== unsupported ==" << Console::gray << std::endl;
+    hd.print();
+    std::cerr << Console::green << "==  overlaps   ==" << Console::gray << std::endl;
+    ho.print();
+
+    // export as a .tex histogram
+    if (cmd_export_stats != -1.0f) {
+      gen_histogram(g_DanglingHisto, hd, cmd_export_stats);
+      gen_histogram(g_OverlapHisto, ho, cmd_export_stats);
+      export_histogram("dangling", hd);
+      export_histogram("overlap", ho);
+    }
+
+    exit(0);
+  }
+#endif
+
   /// init simple UI
   TrackballUI::onRender = mainRender;
   TrackballUI::onKeyPressed = mainKeyboard;
@@ -89,22 +128,16 @@ int main(int argc, const char* argv[])
   // bed rendering
   bed_init();
 
-  // shader for simple drawing
+  /// shaders init
 #ifdef EMSCRIPTEN
   g_ShaderSimple.emscripten = "precision mediump float;\n";
-#endif
-  g_ShaderSimple.init();
-
-  // shader for drawing deposited material
-#ifdef EMSCRIPTEN
   g_ShaderDeposition.emscripten = "precision mediump float;\n";
-#endif
-  g_ShaderDeposition.init();
-
-#ifdef EMSCRIPTEN
   g_ShaderFinal.emscripten = "precision mediump float;\n";
 #endif
-  g_ShaderFinal.init();
+  g_ShaderSimple.init(); // shader for simple drawing
+  g_ShaderDeposition.init(); // shader for drawing deposited material
+  g_ShaderFinal.init(); // final shader
+
   g_RT = RenderTarget2DRGBA_Ptr(new RenderTarget2DRGBA(g_RTWidth, g_RTHeight, GPUTEX_AUTOGEN_MIPMAP));
   g_RT->bind();
   glViewport(0, 0, g_RenderWidth, g_RenderHeight);
@@ -114,7 +147,7 @@ int main(int argc, const char* argv[])
   g_GPUMesh_sphere   = AutoPtr<MeshRenderer<mvf_mesh> >(new MeshRenderer<mvf_mesh>(shape_sphere(1.0f, 12)));
   g_GPUMesh_cylinder = AutoPtr<MeshRenderer<mvf_mesh> >(new MeshRenderer<mvf_mesh>(shape_cylinder(1.0f, 1.0f, 1.0f, 12)));
 
-  /// default view
+  /// default view init
   TrackballUI::trackball().set(v3f(-g_BedSize[0] / 2.0f, -g_BedSize[1] / 2.0f, -300.0f), v3f(0), quatf(v3f(1, 0, 0), -1.0f) * quatf(v3f(0, 0, 1), 0.0f));
   TrackballUI::trackball().setCenter(v3f(g_BedSize[0] / 2.0f, g_BedSize[1] / 2.0f, 10.0f));
   TrackballUI::trackball().setBallSpeed(0.0f);
@@ -130,47 +163,10 @@ int main(int argc, const char* argv[])
 
   SimpleUI::initImGui();
 
-  /// load gcode
-  if (!cmd_gcode.empty()) {
-    g_GCode_string = load_gcode(cmd_gcode.c_str());
-  }
-  else {
-    g_GCode_string = load_gcode();
-  }
-  session_start();
-
-  /// stats mode (generate stats without opening GUI
-  if (cmd_stats) {
-    Console::progressTextInit(g_LastLine);
-    while (!step_simulation(false)) {
-      Console::progressTextUpdate(gcode_line());
-    }
-    Console::progressTextEnd();
-
-    Histogram hd, ho;
-    gen_histogram(g_DanglingHisto, hd);
-    gen_histogram(g_OverlapHisto, ho);
-    std::cerr << Console::green << "\n== unsupported ==" << Console::gray << std::endl;
-    hd.print();
-    std::cerr << Console::green << "==  overlaps   ==" << Console::gray << std::endl;
-    ho.print();
-
-    // export as a .tex histogram
-    if (cmd_export_stats != -1.0f) {
-      gen_histogram(g_DanglingHisto, hd, cmd_export_stats);
-      gen_histogram(g_OverlapHisto, ho, cmd_export_stats);
-      export_histogram("dangling", hd);
-      export_histogram("overlap", ho);
-    }
-
-    exit(0);
-  }
-
 #ifdef EMSCRIPTEN
   /// load gcode in editor window
   std::string command = "setupEditor();";
   emscripten_run_script(command.c_str());
-}
 #endif
 
 motion_start(g_FilamentDiameter);
