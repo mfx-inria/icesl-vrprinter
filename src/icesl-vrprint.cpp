@@ -780,8 +780,8 @@ void mainRender()
     g_ShaderFinal.begin();
     g_ShaderFinal.u_projview.set(orthoMatrixGL(0.0f, 1.0f, 0.0f, 1.0f, -1.0f, 1.0f));
     g_ShaderFinal.u_texpts.set(0);
-    g_ShaderFinal.u_pixsz.set(v3f(1.0f / g_RTWidth, 1.0f / g_RTWidth, 0.0f));
-    g_ShaderFinal.u_texscl.set(v2f(g_RenderWidth / (float)g_RTWidth, g_RenderHeight / (float)g_RTHeight));
+    g_ShaderFinal.u_pixsz.set(v3f(1.0f / g_RTWidth, 1.0f / g_RTWidth, 0.0f)); // squared and power of 2 tex to increase compatibility
+    g_ShaderFinal.u_texscl.set(v2f(g_RenderWidth / (float)g_RTWidth, g_RenderHeight / (float)g_RTHeight)); // to adapt screen texture to the tex coord. one above
     g_ShaderFinal.u_ZNear.set(0.01f);
     g_ShaderFinal.u_ZFar.set(1000.0f);
     g_ShaderFinal.u_color_overhangs.set(g_ColorOverhangs ? 1 : 0);

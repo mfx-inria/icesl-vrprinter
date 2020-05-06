@@ -18,7 +18,7 @@ varying float  v_overlap;
 void main()
 {
   vec3 vertex      = (u_model * mvf_vertex).xyz;
-  vertex.z         = clamp(vertex.z , u_height - u_thickness, u_height);
+  vertex.z         = clamp(vertex.z , u_height - u_thickness, u_height); // cuts top and bottom cylinder edges
 
   v_dangling       = u_dangling;
   v_overlap        = u_overlap;

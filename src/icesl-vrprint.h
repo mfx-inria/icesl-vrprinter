@@ -311,8 +311,8 @@ private:
 
   void drawSegment(v3f a, v3f b, float th, float r, float dg, float ov)
   {
-    double squash_t = min(th / 2.0, r);
-    double rs = disk_squashed_radius(r, squash_t);
+    double squash_t = min(th / 2.0, r); // min dimension on the edge sphere
+    double rs = disk_squashed_radius(r, squash_t); // squashed to preserve area or rectable (th * r)
     g_ShaderDeposition.u_height.set((float)b[2]);
     g_ShaderDeposition.u_thickness.set((float)th);
     g_ShaderDeposition.u_radius.set((float)r);
