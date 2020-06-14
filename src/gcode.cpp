@@ -12,13 +12,25 @@ typedef AutoPtr<t_parser> t_parser_ptr;
 t_stream_ptr g_Stream;
 t_parser_ptr g_Parser;
 
+std::vector<int> g_Extruders;
+int              g_CurrentExtruder = 0;
+
 v4d          g_Pos(0.0);
 v4d          g_Offset(0.0);
 double       g_Speed = 20.0;
-int          g_Extruder = 0;
 int          g_Line = 0;
 const char  *g_GCode = NULL;
 bool         g_GCodeError = false;
+
+// --------------------------------------------------------------
+
+static void set_extruder(int extruder) {
+  //check if we already registered the extruder
+  if (!(std::find(g_Extruders.begin(), g_Extruders.end(), extruder) != g_Extruders.end())) {
+    g_Extruders.push_back(extruder); // register new extruder
+  }
+  g_CurrentExtruder = extruder;
+}
 
 // --------------------------------------------------------------
 
@@ -30,7 +42,7 @@ void gcode_start(const char *gcode)
   g_Pos = 0.0f;
   g_Offset = 0.0f;
   g_Speed = 20.0f;
-  g_Extruder = 0;
+  g_CurrentExtruder = 0;
   g_Line = 0;
   g_GCodeError = false;
 }
@@ -45,7 +57,7 @@ void gcode_reset()
   g_Pos = 0.0f;
   g_Offset = 0.0f;
   g_Speed = 20.0f;
-  g_Extruder = 0;
+  g_CurrentExtruder = 0;
   g_Line = 0;
   g_GCodeError = false;
 }
@@ -124,7 +136,7 @@ bool gcode_advance()
       g_Parser->reachChar('\n');
     } else if (c == 't') {
       int e = g_Parser->readInt();
-      g_Extruder = e;
+      set_extruder(e);
       g_Parser->reachChar('\n');
     } else if (c == '\n') {
       // do nothing
@@ -161,9 +173,17 @@ double gcode_speed()
 
 // --------------------------------------------------------------
 
-int gcode_extruder()
+std::vector<int> gcode_extruders_list()
 {
-  return g_Extruder;
+  std::sort(g_Extruders.begin(), g_Extruders.end());
+  return g_Extruders;
+}
+
+// --------------------------------------------------------------
+
+int gcode_current_extruder()
+{
+  return g_CurrentExtruder;
 }
 
 // --------------------------------------------------------------

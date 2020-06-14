@@ -37,9 +37,13 @@ int           g_RenderHeight = 700;
 int           g_RTWidth = 1024;
 int           g_RTHeight = 1024;
 
-v2f           g_BedSize(250.0f, 150.0f);
+v2f           g_BedSize(200.0f, 200.0f);
 float         g_FilamentDiameter = 1.75f;
 float         g_NozzleDiameter = 0.4f;
+bool          g_isVolumetric = false;
+int           g_NumExtruders = 1;
+vector<pair<float, float>> g_Extruders_offset;
+
 const float   c_HeightFieldStep = 0.04f; // mm
 
 const float   c_ThicknessEpsilon = 0.001f; // 1 um
@@ -54,7 +58,7 @@ int           g_LastLine = 0;
 double        g_GlobalDepositionLength = 0.0;
 
 bool          g_ShowTrajectory = false;
-bool          g_ColorOverhangs = true;
+bool          g_ColorOverhangs = false;
 
 bool          g_AutoPause = false;
 float         g_AutoPauseDanglingLen = 5.0f;
@@ -308,8 +312,9 @@ private:
   float m_LastRadius = 0.0f;
   v3f   m_LastPos;
   bool  m_IsBridge = false;
+  int   m_Extruder = 0;
 
-  void drawSegment(v3f a, v3f b, float th, float r, float dg, float ov)
+  void drawSegment(v3f a, v3f b, float th, float r, float dg, float ov, int e)
   {
     double squash_t = min(th / 2.0, r); // min dimension on the edge sphere
     double rs = disk_squashed_radius(r, squash_t); // squashed to preserve area or rectable (th * r)
@@ -318,7 +323,8 @@ private:
     g_ShaderDeposition.u_radius.set((float)r);
     g_ShaderDeposition.u_dangling.set(dg);
     g_ShaderDeposition.u_overlap.set(ov);
-    g_ShaderDeposition.u_extruder.set(0.25f);
+    g_ShaderDeposition.u_tranparency.set(0.25f);
+    g_ShaderDeposition.u_extruder.set(e);
     g_ShaderDeposition.u_bridge.set(m_IsBridge ? 1.0f : 0.0f);
     // add cylinder from previous
     g_ShaderDeposition.u_model.set(
@@ -346,19 +352,20 @@ public:
 
   GPUBead() {}
 
-  void drawPoint(v3f p, float th, float r, float dg, float ov)
+  void drawPoint(v3f p, float th, float r, float dg, float ov, int e)
   {
     // draw segment
-    drawSegment(m_LastPos, p, th, r, dg, ov);
+    drawSegment(m_LastPos, p, th, r, dg, ov, e);
     // record as last drawn
     m_LastOverlap = ov;
     m_LastDangling = dg;
     m_LastTh = th;
     m_LastRadius = r;
     m_LastPos = p;
+    m_Extruder = e;
   }
 
-  void addPoint(v3f p, float th, float r, float dg, float ov)
+  void addPoint(v3f p, float th, float r, float dg, float ov, int e)
   {
     if (m_Empty) {
       m_Empty = false;
@@ -368,9 +375,10 @@ public:
       m_LastTh = th;
       m_LastRadius = r;
       m_LastPos = p;
+      m_Extruder = e;
     }
     else {
-      drawPoint(p, th, r, dg, ov);
+      drawPoint(p, th, r, dg, ov, e);
     }
   }
 

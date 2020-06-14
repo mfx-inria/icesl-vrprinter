@@ -169,7 +169,7 @@ int main(int argc, const char* argv[])
   emscripten_run_script(command.c_str());
 #endif
 
-motion_start(g_FilamentDiameter);
+motion_start(g_FilamentDiameter, g_isVolumetric);
 
 printer_reset();
 
@@ -299,7 +299,7 @@ void printer_reset()
     }
   }
   g_HeightField.fill((float)prev_z);
-  motion_reset(g_FilamentDiameter);
+  motion_reset(g_FilamentDiameter, g_isVolumetric);
   // stats
   g_DanglingTrajectory.clear();
   g_InDangling = false;
@@ -323,12 +323,24 @@ void session_start()
   }
   g_LastLine = gcode_line();
   cerr << "gcode has " << g_LastLine << " line(s)" << endl;
+
+  // get the number of extruders used
+  g_NumExtruders = gcode_extruders_list().size() > 0 ? gcode_extruders_list().size() : 1;
+  // prepare the extruders offsets
+  g_Extruders_offset.resize(g_NumExtruders);
+  for (auto i = 0; i != g_Extruders_offset.size(); i++) {
+    g_Extruders_offset[i].first = 0.0f;
+    g_Extruders_offset[i].second = 0.0f;
+  }
+
   gcode_reset();
+
   // height field
   int hszx = (int)ceil(g_HeightFieldBox.extent()[0] / c_HeightFieldStep);
   int hszy = (int)ceil(g_HeightFieldBox.extent()[1] / c_HeightFieldStep);
   cerr << "Allocated height field " << printByteSize(hszx * hszy * sizeof(float)) << endl;
   g_HeightField.allocate(hszx, hszy);
+
   // reset printer
   printer_reset();
 }
@@ -489,8 +501,13 @@ bool step_simulation(bool gpu_draw)
       last_line = gcode_line();
     }
 #endif
-    // pushed material volume during time interval
+    // current position
     v3d pos   = v3d(motion_get_current_pos());
+    // applying extruders offsets to pos
+    pos[0] = pos[0] + g_Extruders_offset[gcode_current_extruder()].first;
+    pos[1] = pos[1] + g_Extruders_offset[gcode_current_extruder()].second;
+
+    // pushed material volume during time interval
     float h   = heightAt(v3f(pos), g_NozzleDiameter / 2.0f);
 
     static double th_prev = 0.0;
@@ -561,7 +578,7 @@ bool step_simulation(bool gpu_draw)
       }
 
       if (gpu_draw) {
-        g_Bead.addPoint(v3f(pos), (float)th, (float)r, dangling, overlap);
+        g_Bead.addPoint(v3f(pos), (float)th, (float)r, dangling, overlap, gcode_current_extruder());
       }
 
       // update height field
@@ -615,7 +632,7 @@ bool step_simulation(bool gpu_draw)
             g_Bead.closeAny();
             g_Bead.setIsBridge(true);
             for (auto p : g_DanglingTrajectory) {
-              g_Bead.addPoint(v3f(p.pos), (float)p.th, (float)p.r, 0.0f, 0.0f);
+              g_Bead.addPoint(v3f(p.pos), (float)p.th, (float)p.r, 0.0f, 0.0f, gcode_current_extruder());
             }
             g_Bead.closeAny();
             g_Bead.setIsBridge(false);
@@ -637,7 +654,8 @@ bool step_simulation(bool gpu_draw)
     if (!g_InDangling && dangling > 0.0) {
       // enter dangling
       g_DanglingTrajectory.clear();
-      sl_assert(tj.r > 0.0f);
+      // PB FIXME: this assert should be needed , but is disabled to comply with etruders offsets
+      //sl_assert(tj.r > 0.0f);
       g_DanglingTrajectory.push_back(tj);
       g_InDangling          = true;
       g_InDanglingStart     = g_GlobalDepositionLength;
@@ -688,7 +706,7 @@ void mainRender()
   if (LibSL::System::File::exists("/print.gcode")) {
     g_GCode_string = loadFileIntoString("/print.gcode");
     session_start();
-    motion_start(g_FilamentDiameter);
+    motion_start(g_FilamentDiameter, g_isVolumetric);
     std::remove("/print.gcode");
     g_ForceRedraw = true;
   }
@@ -943,14 +961,41 @@ void ImGuiPanel()
 
     // printer setup
     ImGui::SetNextTreeNodeOpen(true);
+    static float nozzleDiameter = g_NozzleDiameter;
     if (ImGui::CollapsingHeader("Printer")) {
+      // filament diameter
       ImGui::InputFloat("Filament diameter", &g_FilamentDiameter, 0.0f, 0.0f, 3);
       g_FilamentDiameter = clamp(g_FilamentDiameter, 0.1f, 10.0f);
-      static float nozzleDiameter = g_NozzleDiameter;
+      // nozzle diameter
       ImGui::InputFloat("Nozzle diameter", &nozzleDiameter, 0.0f, 0.0f, 3);
       g_NozzleDiameter = clamp(nozzleDiameter, c_HeightFieldStep * 2.0f, 10.0f);
+      // extruder number
+      ImGui::InputInt("Number of extruders", &g_NumExtruders, 1, 1, ImGuiInputTextFlags_ReadOnly);
+      // extruders offsets
+      if (g_NumExtruders > 1) {
+        for (int i = 1; i != g_NumExtruders; i++) {
+          if (ImGui::TreeNode(("Offsets for Extruder " + std::to_string(i)).c_str())) {
+            ImGui::InputFloat("X Offset", &g_Extruders_offset[i].first, 0.1f, 0.5f, "%.3f");
+            ImGui::InputFloat("Y Offset", &g_Extruders_offset[i].second, 0.1f, 0.5f, "%.3f");
+            ImGui::TreePop();
+          }
+        }
+      }
+      // volumetric extrusion
+      ImGui::Checkbox("Volumetric extrusion", &g_isVolumetric);
+      // bed dimmensions
+      ImGui::InputFloat("Bed X size", &g_BedSize[0], 0.5f, 1.0f, "%.3f");
+      ImGui::InputFloat("Bed Y size", &g_BedSize[1], 0.5f, 1.0f, "%.3f");
+    }
+    // control
+    ImGui::SetNextTreeNodeOpen(true);
+    if (ImGui::CollapsingHeader("Control")) {
+      // start line
       ImGui::InputInt("Start at GCode line", &g_StartAtLine);
       g_StartAtLine = max(0, min(g_StartAtLine, g_LastLine - 1));
+      // animation step (mm/step)
+      ImGui::SliderFloat("Step (mm)", &g_UserMmStep, 0.001f, 1000.0f, "%.3f", 3.0f);
+      // control buttons
       if (ImGui::Button("Reset")) {
         g_NozzleDiameter = nozzleDiameter;
         printer_reset();
@@ -965,19 +1010,35 @@ void ImGuiPanel()
         g_DumpHeightField = true;
         g_DumpHeightFieldStartLen = g_GlobalDepositionLength;
       }
-    }
-    // control
-    ImGui::SetNextTreeNodeOpen(true);
-    if (ImGui::CollapsingHeader("Control")) {
-      ImGui::SliderFloat("Step (mm)", &g_UserMmStep, 0.001f, 1000.0f, "%.3f", 3.0f);
+      // pause button
+      if (g_Paused) {
+        if (ImGui::Button("Resume")) {
+          g_Paused = false;
+        }
+      } else {
+        if (ImGui::Button("Pause")) {
+          g_Paused = true;
+        }
+      }
+      // auto pause
+      ImGui::SameLine();
+      ImGui::Checkbox("Auto pause", &g_AutoPause);
+      if (g_AutoPause) {
+        ImGui::InputFloat("overhang >", &g_AutoPauseDanglingLen, 1.0f, 1000.0f);
+        ImGui::InputFloat("overlap  >", &g_AutoPauseOverlapLen, 1.0f, 1000.0f);
+      }
+      // show trajectory (virtual nozzle)
       ImGui::Checkbox("Show trajectory", &g_ShowTrajectory);
+      // show overlaps
       ImGui::Checkbox("Color overlaps (blue) and overhangs (red)", &g_ColorOverhangs);
     }
     // status
     ImGui::SetNextTreeNodeOpen(true);
     if (ImGui::CollapsingHeader("Status")) {
+      // current gcode line
       int line = gcode_line();
-      ImGui::InputInt("GCode line", &line);
+      ImGui::InputInt("GCode line", &line, 1, 100, ImGuiInputTextFlags_ReadOnly);
+      // current gcode pos
       static v3f pos;
       pos = v3f(motion_get_current_pos());
       ImGui::InputFloat3("XYZ (mm)", &pos[0]);
@@ -1031,23 +1092,6 @@ void ImGuiPanel()
         }
         ImGui::PlotHistogram("overlaps (blue)", &histo[0], (int)histo.size());
       }
-    }
-    // pause
-    ImGui::SetNextTreeNodeOpen(true);
-    if (ImGui::CollapsingHeader("Pause")) {
-      if (g_Paused) {
-        if (ImGui::Button("Resume")) {
-          g_Paused = false;
-        }
-      }
-      else {
-        if (ImGui::Button("Stop")) {
-          g_Paused = true;
-        }
-      }
-      ImGui::Checkbox("Auto pause", &g_AutoPause);
-      ImGui::InputFloat("overhang >", &g_AutoPauseDanglingLen, 1.0f, 1000.0f);
-      ImGui::InputFloat("overlap  >", &g_AutoPauseOverlapLen, 1.0f, 1000.0f);
     }
 
     ImGui::End();

@@ -4,7 +4,7 @@
 #include <LibSL.h>
 
 // start motion, assumes gcode is ready (gcode_start has been called)
-void  motion_start(double filament_diameter_mm);
+void  motion_start(double filament_diameter_mm, bool volumetric);
 
 // returns the current pos
 v4d   motion_get_current_pos();
@@ -21,7 +21,7 @@ double motion_get_current_e_per_xyz();
 double motion_step(double delta_ms,bool& _done);
 
 // restarts from scratch
-void motion_reset(double filament_diameter_mm);
+void motion_reset(double filament_diameter_mm, bool volumetric);
 
 // returns true if motion is a travel
 bool motion_is_travel();
