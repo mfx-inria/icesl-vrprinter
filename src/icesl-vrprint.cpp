@@ -22,6 +22,7 @@ GPUBead g_Bead;
 
 int main(int argc, const char* argv[])
 {
+#ifndef EMSCRIPTEN
   /// prepare cmd line arguments
   TCLAP::CmdLine   cmd(" Analyse Gcode and produce statistics", ' ', "1.0");
 
@@ -56,6 +57,7 @@ int main(int argc, const char* argv[])
   {
     std::cerr << "Error: unknown exception caught" << std::endl;
   }
+#endif
 
   /// load gcode
   if (!cmd_gcode.empty()) {
@@ -504,8 +506,15 @@ bool step_simulation(bool gpu_draw)
     // current position
     v3d pos   = v3d(motion_get_current_pos());
     // applying extruders offsets to pos
-    pos[0] = pos[0] + g_Extruders_offset[gcode_current_extruder()].first;
-    pos[1] = pos[1] + g_Extruders_offset[gcode_current_extruder()].second;
+    if (g_NumExtruders > 1) {
+      pos[0] = pos[0] + g_Extruders_offset[gcode_current_extruder()].first;
+      pos[1] = pos[1] + g_Extruders_offset[gcode_current_extruder()].second;
+    }
+    // appliying offsets for centered bed (center of the bed is (0,0) )
+    if (g_isCentered) {
+      pos[0] = pos[0] + g_BedSize[0]/2;
+      pos[1] = pos[1] + g_BedSize[1]/2;
+    }
 
     // pushed material volume during time interval
     float h   = heightAt(v3f(pos), g_NozzleDiameter / 2.0f);
@@ -935,7 +944,6 @@ void makeAxisMesh()
 
 void ImGuiPanel()
 {
-
   if (g_Downloading) {
     ImGui::SetNextWindowSize(ImVec2(300, 50));
     ImGui::SetNextWindowPosCenter();
@@ -945,7 +953,6 @@ void ImGuiPanel()
   }
 
   if (!g_FatalError) {
-
     // imgui
     if (g_Downloading) {
       ImGui::SetNextWindowSize(ImVec2(300, 50));
@@ -958,6 +965,19 @@ void ImGuiPanel()
     ImGui::SetNextWindowSize(ImVec2((float)g_UIWidth, 750), ImGuiSetCond_Once);
     ImGui::Begin("Virtual 3D printer");
     ImGui::PushItemWidth(200);
+
+#ifndef EMSCRIPTEN
+    ImGui::SetNextTreeNodeOpen(true);
+    if (ImGui::CollapsingHeader("File")) {
+      if (ImGui::Button("Load a new Gcode")) {
+        g_GCode_string = load_gcode();
+        session_start();
+        motion_start(g_FilamentDiameter, g_isVolumetric);
+        printer_reset();
+        g_ForceRedraw = true;
+      }
+    }
+#endif
 
     // printer setup
     ImGui::SetNextTreeNodeOpen(true);
@@ -986,6 +1006,8 @@ void ImGuiPanel()
       // bed dimmensions
       ImGui::InputFloat("Bed X size", &g_BedSize[0], 0.5f, 1.0f, "%.3f");
       ImGui::InputFloat("Bed Y size", &g_BedSize[1], 0.5f, 1.0f, "%.3f");
+      // volumetric extrusion
+      ImGui::Checkbox("Bed center is (0,0)", &g_isCentered);
     }
     // control
     ImGui::SetNextTreeNodeOpen(true);
@@ -1093,18 +1115,14 @@ void ImGuiPanel()
         ImGui::PlotHistogram("overlaps (blue)", &histo[0], (int)histo.size());
       }
     }
-
     ImGui::End();
-
   }
   else { // fatal error
-
     ImGui::SetNextWindowSize(ImVec2(600, 50));
     ImGui::SetNextWindowPosCenter();
     ImGui::Begin("Unsupported");
     ImGui::Text("%s", g_FatalErrorMessage.c_str());
     ImGui::End();
-
   }
 
   ImGui::Render();
@@ -1132,14 +1150,13 @@ void mainMouseButton(uint x, uint y, uint btn, uint flags)
     }
   }
 
-  {
-    if (btn == LIBSL_WHEEL_UP) {
-      g_ZoomTarget = g_ZoomTarget*1.05f;
-    } else if (btn == LIBSL_WHEEL_DOWN) {
-      g_ZoomTarget = g_ZoomTarget / 1.05f;
-    }
+  if (btn == LIBSL_WHEEL_UP) {
+    g_ZoomTarget = g_ZoomTarget*1.05f;
+    std::cerr << Console::red << "zoom in" << Console::gray << std::endl;
+  } else if (btn == LIBSL_WHEEL_DOWN) {
+    g_ZoomTarget = g_ZoomTarget / 1.05f;
+    std::cerr << Console::green << "zoom in" << Console::gray << std::endl;
   }
-
 }
 
 // ----------------------------------------------------------------
