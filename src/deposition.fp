@@ -5,9 +5,7 @@ varying vec3   v_pos;
 uniform float  u_ZNear;
 uniform float  u_ZFar;
 
-uniform float  u_tranparency; // never 0, 1 for extruder 0
-
-uniform int    u_extruder;
+uniform float  u_extruder; // never 0, 1 for extruder 0
 
 uniform float  u_bridge;
 
@@ -22,15 +20,9 @@ void main()
   float d   = clamp(v_dangling * 0.5, 0.0 ,0.45);
   float o   = clamp(v_overlap  * 0.5, 0.0, 0.45);
 
-  vec3 clr = vec3(z_l, z_h, (o == 0.0 ? d : 0.5 + o));
-
-  //if (u_bridge == 1.0) { // special case for bridges
-    //clr = vec3(z_l, z_h, 1.0);
-  //}
-
-  if (u_extruder > 0) {
-    clr = vec3(z_l, z_h, 1.0);
+  if (u_bridge == 1.0) { // special case for bridges
+    gl_FragColor = vec4(z_l, z_h, 1.0, u_extruder / 255.0);
+  } else {
+    gl_FragColor = vec4(z_l, z_h, (o == 0.0 ? d : 0.5 + o), u_extruder / 255.0);
   }
-
-  gl_FragColor = vec4(clr, u_tranparency);
 }

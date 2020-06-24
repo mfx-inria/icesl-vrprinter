@@ -1001,7 +1001,10 @@ void ImGuiPanel()
           }
         }
       }
+      // relative extrusion
+      ImGui::Checkbox("Relative extrusion", &g_isRelative);
       // volumetric extrusion
+      ImGui::SameLine();
       ImGui::Checkbox("Volumetric extrusion", &g_isVolumetric);
       // bed dimmensions
       ImGui::InputFloat("Bed X size", &g_BedSize[0], 0.5f, 1.0f, "%.3f");

@@ -40,6 +40,7 @@ int           g_RTHeight = 1024;
 v2f           g_BedSize(200.0f, 200.0f);
 float         g_FilamentDiameter = 1.75f;
 float         g_NozzleDiameter = 0.4f;
+bool          g_isRelative = false;
 bool          g_isVolumetric = false;
 bool          g_isCentered = false;
 int           g_NumExtruders = 1;
@@ -324,8 +325,7 @@ private:
     g_ShaderDeposition.u_radius.set((float)r);
     g_ShaderDeposition.u_dangling.set(dg);
     g_ShaderDeposition.u_overlap.set(ov);
-    g_ShaderDeposition.u_tranparency.set(0.25f);
-    g_ShaderDeposition.u_extruder.set(e);
+    g_ShaderDeposition.u_extruder.set(float(e + 1));
     g_ShaderDeposition.u_bridge.set(m_IsBridge ? 1.0f : 0.0f);
     // add cylinder from previous
     g_ShaderDeposition.u_model.set(
