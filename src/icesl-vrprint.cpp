@@ -70,7 +70,7 @@ int main(int argc, const char* argv[])
   session_start();
 
 #ifndef EMSCRIPTEN
-  /// stats mode (generate stats without opening GUI
+  /// stats mode (generate stats without opening GUI)
   if (cmd_stats) {
     Console::progressTextInit(g_LastLine);
     while (!step_simulation(false)) {
@@ -288,9 +288,13 @@ void printer_reset()
   g_PrevPos      = v3d(0.0);
   g_PrevPrevPos  = v3d(0.0);
 
+  g_NumExtruders = 1;
+  g_Extruders_offset.clear();
+
   g_Trajectory    .clear();
   g_HeightSegments.clear();
   g_GlobalDepositionLength = 0.0f;
+
   double prev_z   = 0.0;
   double curr_z   = 0.0;
   while (gcode_line() < g_StartAtLine) {
@@ -302,6 +306,7 @@ void printer_reset()
   }
   g_HeightField.fill((float)prev_z);
   motion_reset(g_FilamentDiameter, g_isVolumetric);
+
   // stats
   g_DanglingTrajectory.clear();
   g_InDangling = false;
@@ -316,12 +321,18 @@ void printer_reset()
 void session_start()
 {
   gcode_start(g_GCode_string.c_str());
+
   // build path box (traverses the entire gcode ... a bit sad, but ...)
   g_HeightFieldBox = AAB<3>();
   while (gcode_advance()) {
-    if (gcode_next_pos()[3] > 0.0f && gcode_next_pos()[2] > g_StatsHeightThres) { // we ignore first layers due to purge. should be fine? hmmm
+#if 0
+    // we ignore first layers due to purge. should be fine? hmmm
+    if (gcode_next_pos()[3] > 0.0f && gcode_next_pos()[2] > g_StatsHeightThres) { 
       g_HeightFieldBox.addPoint(v3f(gcode_next_pos()));
     }
+#else
+    g_HeightFieldBox.addPoint(v3f(gcode_next_pos()));
+#endif
   }
   g_LastLine = gcode_line();
   cerr << "gcode has " << g_LastLine << " line(s)" << endl;
@@ -335,7 +346,13 @@ void session_start()
     g_Extruders_offset[i].second = 0.0f;
   }
 
-  gcode_reset();
+  // detect volumetric extrusion
+  if (gcode_volumetric_mode()) {
+    g_isVolumetric = gcode_volumetric_mode();
+    g_FilamentDiameter = (float)gcode_filament_dia();
+  }
+
+  // gcode_reset(); PB NOTE: already called at the start of printer_reset()
 
   // height field
   int hszx = (int)ceil(g_HeightFieldBox.extent()[0] / c_HeightFieldStep);
@@ -472,10 +489,8 @@ bool step_simulation(bool gpu_draw)
 {
   float raster_erode = c_HeightFieldStep * sqrt(2.0f);
 
-  double tmstep  = (double)g_MmStep / (gcode_speed() / 1000.0);
-  double step_ms = tmstep;
+  double step_ms = g_MmStep / (gcode_speed() / 1000.0);
   while (step_ms > 0.0f) {
-    
     // step motion
     bool  done;
     double delta_ms = motion_step(step_ms, done);
@@ -539,17 +554,15 @@ bool step_simulation(bool gpu_draw)
     TrajPoint tj   = TrajPoint(pos, (float)th, (float)0.0f, dangling, overlap);
 
     if (len > 1e-6 && !motion_is_travel()) {
-
       // std::cerr << 'x';
 
       // print move
-
       double cs = M_PI * g_FilamentDiameter * g_FilamentDiameter / 4.0f; // mm^2
       double sa = motion_get_current_e_per_xyz() * cs;   // vf / len;
       double r  = sqrt(sa / M_PI); // sa = pi*r^2
       double squash_t = min(th / 2.0, r);
       double rs = disk_squashed_radius(r, squash_t);
-      double max_th = motion_get_current_e_per_xyz() * cs / g_NozzleDiameter;
+      double max_th = sa / g_NozzleDiameter;
 
       tj = TrajPoint(pos, (float)th, (float)r, dangling, overlap);
 
@@ -567,7 +580,6 @@ bool step_simulation(bool gpu_draw)
 
       // stats
       if (pos[2] > g_StatsHeightThres) {
-
         dangling = danglingAt((float)max_th, v3f(pos), (float)rs);
         overlap  = overlapAt((float)th, v3f(pos), (float)rs - raster_erode);
 
@@ -575,7 +587,6 @@ bool step_simulation(bool gpu_draw)
         dangling = max(dangling - 0.6f, 0.0f) / 0.4f;
         // overlap only if > 40%
         overlap = max(overlap - 0.4f, 0.0f) / 0.6f;
-
       }
 
       // add segment to global length
@@ -715,7 +726,7 @@ void mainRender()
   if (LibSL::System::File::exists("/print.gcode")) {
     g_GCode_string = loadFileIntoString("/print.gcode");
     session_start();
-    motion_start(g_FilamentDiameter, g_isVolumetric);
+    motion_start(g_FilamentDiameter, g_isRelative, g_isVolumetric);
     std::remove("/print.gcode");
     g_ForceRedraw = true;
   }
@@ -1001,10 +1012,7 @@ void ImGuiPanel()
           }
         }
       }
-      // relative extrusion
-      ImGui::Checkbox("Relative extrusion", &g_isRelative);
       // volumetric extrusion
-      ImGui::SameLine();
       ImGui::Checkbox("Volumetric extrusion", &g_isVolumetric);
       // bed dimmensions
       ImGui::InputFloat("Bed X size", &g_BedSize[0], 0.5f, 1.0f, "%.3f");

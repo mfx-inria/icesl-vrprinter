@@ -7,6 +7,9 @@
 bool   g_IsTravel     = false;
 bool   g_IsVolumetric = false;
 
+double g_RetracValue = 0.0;
+bool   g_HasRetract = 0.0;
+
 v4d    g_PrevGcodePos = v4d(0);
 v4d    g_CurrentPos   = v4d(0);
 
@@ -21,6 +24,8 @@ void motion_start(double filament_diameter_mm, bool volumetric)
 {
   g_IsTravel = false;
   g_IsVolumetric = volumetric;
+  g_RetracValue = 0.0;
+  g_HasRetract = false;
   g_PrevGcodePos = v4d(0);
   g_CurrentPos = v4d(0);
   g_Current_EperXYZ = 0.0;
@@ -35,6 +40,8 @@ void motion_reset(double filament_diameter_mm, bool volumetric)
 {
   g_IsTravel = false;
   g_IsVolumetric = volumetric;
+  g_RetracValue = 0.0;
+  g_HasRetract = false;
   g_PrevGcodePos = gcode_next_pos();
   g_CurrentPos = gcode_next_pos();
   g_Current_EperXYZ = 0.0;
@@ -44,7 +51,7 @@ void motion_reset(double filament_diameter_mm, bool volumetric)
 
 // --------------------------------------------------------------
 
-v4d   motion_get_current_pos()
+v4d motion_get_current_pos()
 {
   return v4d(g_CurrentPos);
 }
@@ -58,7 +65,8 @@ double motion_get_current_e_per_xyz() // (ratio) mm / mm
 
 // --------------------------------------------------------------
 
-static double e_from_volumetric(double e_vol) {
+static double e_from_volumetric(double e_vol)
+{
   return e_vol / (pow(g_FilamentDiamenter/2, 2) * M_PI);
 }
 
@@ -71,10 +79,13 @@ static double e_per_xyz() // (ratio) mm / mm
     return 0.0;
   }
 
-  double e = (gcode_next_pos()[3] - g_PrevGcodePos[3]) / ln;
+  double delta_e = gcode_next_pos()[3] - g_PrevGcodePos[3];
+
+  double e = delta_e / ln;
   if (g_IsVolumetric) {
-    e = (e_from_volumetric(gcode_next_pos()[3]) - e_from_volumetric(g_PrevGcodePos[3])) / ln;
+    e = e_from_volumetric(e);
   } 
+
   return e;
 }
 
@@ -82,18 +93,23 @@ static double e_per_xyz() // (ratio) mm / mm
 
 double motion_get_current_flow() // mm^3 / sec
 {
-  double ln = length(v3d(gcode_next_pos()) - v3d(g_PrevGcodePos));
-  double vl = (gcode_next_pos()[3] - g_PrevGcodePos[3]) * g_FilamentCrossArea;
+  double delta_e = gcode_next_pos()[3] - g_PrevGcodePos[3];
+
+  double vl = delta_e * g_FilamentCrossArea;
   if (g_IsVolumetric) {
-    vl = (e_from_volumetric(gcode_next_pos()[3]) - e_from_volumetric(g_PrevGcodePos[3])) * g_FilamentCrossArea;
-  }
+    vl = delta_e;
+  } 
+
   if (gcode_speed() < 1) {
-    return 0.0f;
+    return 0.0;
   }
+
+  double ln = length(v3d(gcode_next_pos()) - v3d(g_PrevGcodePos));
   double tm = ln / gcode_speed();
   if (tm < 1e-6f) {
-    return 0.0f;
+    return 0.0;
   }
+
   return vl / tm;
 }
 
@@ -106,7 +122,7 @@ bool motion_is_travel()
 
 // --------------------------------------------------------------
 
-double motion_step(double delta_ms,bool& _done)
+double motion_step(double delta_ms, bool& _done)
 {
   _done           = false;
   bool advance    = false;
@@ -116,70 +132,59 @@ double motion_step(double delta_ms,bool& _done)
   double step_e   = 0.0;
   v3d    step_pos = 0.0;
 
+  g_Current_EperXYZ = e_per_xyz();
+
   if (g_IsVolumetric) {
-    delta_e = e_from_volumetric(gcode_next_pos()[3]) - e_from_volumetric(g_CurrentPos[3]);
-  }
+    delta_e = e_from_volumetric(delta_e);
+  } 
 
-  if (abs(len) < 1e-6 && abs(delta_e) > 1e-6) {
+  g_IsTravel = abs(delta_e) < 1e-6;
 
-    // E motion only
-    // do not overshot!
-    double len_step = (double)delta_ms * (double)gcode_speed() / 1000.0;
+  double len_step = delta_ms * gcode_speed() / 1000.0;
+  if (abs(len) < 1e-6 && abs(delta_e) > 1e-6) { // E motion only - do not overshot!
     if (len_step > abs(delta_e)) {
       advance = true;
       // adjust time step to reach exactly the target
-      delta_ms = abs(delta_e) * 1000.0 / (double)gcode_speed();
+      delta_ms = abs(delta_e) * 1000.0 / gcode_speed();
       len_step = abs(delta_e);
     }
     // update
     step_e = len_step * sign(delta_e);
-
-  } else if (abs(len) > 1e-6) {
-
-    // all axis motion
-    // do not overshot!
-    double len_step = (double)delta_ms * (double)gcode_speed() / 1000.0;
+  } else if (abs(len) > 1e-6) { // all axis motion - do not overshot!
     if (len_step > len) {
       advance = true;
       // adjust time step to reach exactly the target
-      delta_ms = len * 1000.0 / (double)gcode_speed();
+      delta_ms = len * 1000.0 / gcode_speed();
       len_step = len;
     }
     // update
-    v3d dir          = normalize_safe(delta_pos);
-    step_pos         = dir * len_step;
-    step_e           = len_step * e_per_xyz();
-
-  } else {
-    // only advance in gcode
+    step_pos = normalize_safe(delta_pos) * len_step; // dir * step
+    step_e   = len_step * e_per_xyz();
+  } else { // only advance in gcode
     advance  = true;
     delta_ms = 0.0;
     step_pos = 0.0;
     step_e   = 0.0;
   }
 
-  g_Current_EperXYZ = e_per_xyz();
-  if (g_IsVolumetric) {
-    g_IsTravel = abs(e_from_volumetric(gcode_next_pos()[3]) - e_from_volumetric(g_PrevGcodePos[3])) < 1e-6;
-  } else {
-    g_IsTravel = abs(gcode_next_pos()[3] - g_PrevGcodePos[3]) < 1e-6;
-  }
-
-  if (advance) {
-    // snap to exact pos
-    g_CurrentPos = gcode_next_pos();
-  } else {
-    g_CurrentPos += v4d(step_pos, step_e);
-  }
+#if 0
+  std::cerr << Console::green << "step_pos: " << step_pos
+            << Console::magenta << " step_e: " << step_e
+            << Console::yellow << " delta_e: " << delta_e
+            << Console::cyan << " next_e: " << gcode_next_pos()[3] << " current_e: " << g_CurrentPos[3]
+            << Console::gray << std::endl;
+#endif
 
   // advance in gcode?
-  if (advance) {
+  if (advance) { // reached current gcode position, advance!
     //std::cerr << 'a';
-    // reached current gcode position, advance!
+    // snap to exact pos
+    g_CurrentPos   = gcode_next_pos();
     g_PrevGcodePos = gcode_next_pos();
     _done          = !gcode_advance();
   } else {
     //std::cerr << '_';
+    g_CurrentPos += v4d(step_pos, step_e);
   }
 
   return delta_ms;

@@ -30,3 +30,9 @@ void gcode_reset();
 
 // returns true in a reading error occured
 bool gcode_error();
+
+// returns the extrusion type (true -> volumetric | false -> default)
+bool gcode_volumetric_mode();
+
+// returns the filament diameter provided by M200 (volumetric extrusion)
+double gcode_filament_dia();

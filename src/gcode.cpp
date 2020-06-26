@@ -15,6 +15,11 @@ t_parser_ptr g_Parser;
 std::vector<int> g_Extruders;
 int              g_CurrentExtruder = 0;
 
+bool         g_ExtrusionMode = false; // false -> absolute extrusion | true - > relative extrusion 
+bool         g_VolumetricMode = false;
+
+double       g_FilDiameter = 0.0; // used only when volumetric extrusion is detected
+
 v4d          g_Pos(0.0);
 v4d          g_Offset(0.0);
 double       g_Speed = 20.0;
@@ -45,6 +50,9 @@ void gcode_start(const char *gcode)
   g_CurrentExtruder = 0;
   g_Line = 0;
   g_GCodeError = false;
+  g_ExtrusionMode = false;
+  g_VolumetricMode = false;
+  g_FilDiameter = 0.0;
 }
 
 // --------------------------------------------------------------
@@ -60,6 +68,9 @@ void gcode_reset()
   g_CurrentExtruder = 0;
   g_Line = 0;
   g_GCodeError = false;
+  g_ExtrusionMode = false;
+  g_VolumetricMode = false;
+  g_FilDiameter = 0.0;
 }
 
 // --------------------------------------------------------------
@@ -88,8 +99,14 @@ bool gcode_advance()
           double f = g_Parser->readDouble();
           if (c >= 'x' && c <= 'z') {
             g_Pos[c - 'x'] = f + g_Offset[c - 'x'];
-          } else if (c == 'e') {
-            g_Pos[3] = f + g_Offset[3];
+          } else if (c == 'e') {  
+            // if relative extrusion is detected, individual extrusion steps are merged
+            // to be like absolute extrusion
+            if (g_ExtrusionMode) { 
+              g_Pos[3] = g_Pos[3] + f + g_Offset[3];
+            } else {
+              g_Pos[3] = f + g_Offset[3];
+            }
             //e_raw    = f;
           } else if (c == 'f') {
             g_Speed = f / 60.0f;
@@ -133,7 +150,26 @@ bool gcode_advance()
       }
     } else if (c == 'm') {
       int n = g_Parser->readInt();
-      g_Parser->reachChar('\n');
+      if (n == 82) { // M82: absolute extrusion
+        g_ExtrusionMode = false;
+      } else if (n == 83) { // M83 relative extrusion
+        g_ExtrusionMode = true;
+      } else if (n == 200) { // M200 set filament diameter & enable volumetric extrusion
+        g_VolumetricMode = true;
+        while (!g_Parser->eof()) {
+          c = g_Parser->readChar();
+          if (c == '\n') break;
+          c = tolower(c);
+          double d = g_Parser->readDouble();
+          if (c == 'd') {
+            g_FilDiameter = d; // update the filament diameter with the one provide by M200
+          } else {
+            g_Parser->reachChar('\n');
+          }
+        }
+      } else { // other => ignore
+        g_Parser->reachChar('\n');
+      }
     } else if (c == 't') {
       int e = g_Parser->readInt();
       set_extruder(e);
@@ -198,6 +234,21 @@ int gcode_line()
 bool gcode_error() 
 {
   return g_GCodeError;
+}
+
+// --------------------------------------------------------------
+
+bool gcode_volumetric_mode()
+{
+  return g_VolumetricMode;
+}
+
+// --------------------------------------------------------------
+
+
+double gcode_filament_dia()
+{
+  return g_FilDiameter;
 }
 
 // --------------------------------------------------------------
