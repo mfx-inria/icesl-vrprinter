@@ -520,7 +520,7 @@ bool step_simulation(bool gpu_draw)
 
       double cs = M_PI * g_FilamentDiameter * g_FilamentDiameter / 4.0f; // mm^2
       double sa = motion_get_current_e_per_xyz() * cs;   // vf / len;
-      double r = sqrt(sa / M_PI); // sa = pi*r^2
+      double r  = sqrt(sa / M_PI); // sa = pi*r^2
       double squash_t = min(th / 2.0, r);
       double rs = disk_squashed_radius(r, squash_t);
       double max_th = motion_get_current_e_per_xyz() * cs / g_NozzleDiameter;
