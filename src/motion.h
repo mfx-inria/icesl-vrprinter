@@ -4,10 +4,10 @@
 #include <LibSL.h>
 
 // start motion, assumes gcode is ready (gcode_start has been called)
-void motion_start(double filament_diameter_mm, bool volumetric);
+void motion_start(double filament_diameter_mm);
 
 // restarts from scratch
-void motion_reset(double filament_diameter_mm, bool volumetric);
+void motion_reset(double filament_diameter_mm);
 
 // performs the next motion step, takes as input the step in milliseconds
 // returns the consumed time (may be less than delta_ms)

@@ -5,10 +5,6 @@
 // --------------------------------------------------------------
 
 bool   g_IsTravel     = false;
-bool   g_IsVolumetric = false;
-
-double g_RetracValue = 0.0;
-bool   g_HasRetract = 0.0;
 
 v4d    g_PrevGcodePos = v4d(0);
 v4d    g_CurrentPos   = v4d(0);
@@ -16,37 +12,26 @@ v4d    g_CurrentPos   = v4d(0);
 double g_Current_EperXYZ = 0.0;
 
 double g_FilamentDiamenter = 1.75;
-double g_FilamentCrossArea = M_PI * g_FilamentDiamenter * g_FilamentDiamenter;
 
 // --------------------------------------------------------------
 
-void motion_start(double filament_diameter_mm, bool volumetric)
+void motion_start(double filament_diameter_mm)
 {
-  g_IsTravel = false;
-  g_IsVolumetric = volumetric;
-  g_RetracValue = 0.0;
-  g_HasRetract = false;
-  g_PrevGcodePos = v4d(0);
-  g_CurrentPos = v4d(0);
-  g_Current_EperXYZ = 0.0;
-  g_FilamentDiamenter = filament_diameter_mm;
-  g_FilamentCrossArea = M_PI * g_FilamentDiamenter * g_FilamentDiamenter / 4.0;
+  motion_reset(filament_diameter_mm);
   gcode_advance();
 }
 
 // --------------------------------------------------------------
 
-void motion_reset(double filament_diameter_mm, bool volumetric)
+void motion_reset(double filament_diameter_mm)
 {
+  g_FilamentDiamenter = filament_diameter_mm;
+
   g_IsTravel = false;
-  g_IsVolumetric = volumetric;
-  g_RetracValue = 0.0;
-  g_HasRetract = false;
+  
   g_PrevGcodePos = gcode_next_pos();
   g_CurrentPos = gcode_next_pos();
   g_Current_EperXYZ = 0.0;
-  g_FilamentDiamenter = filament_diameter_mm;
-  g_FilamentCrossArea = M_PI * g_FilamentDiamenter * g_FilamentDiamenter / 4.0;
 }
 
 // --------------------------------------------------------------
@@ -67,7 +52,13 @@ double motion_get_current_e_per_xyz() // (ratio) mm / mm
 
 static double e_from_volumetric(double e_vol)
 {
-  return e_vol / (pow(g_FilamentDiamenter/2, 2) * M_PI);
+  return e_vol / (pow(g_FilamentDiamenter / 2, 2) * M_PI);
+}
+
+// --------------------------------------------------------------
+
+static double filament_cross_section(double filament_diameter) {
+  return M_PI * filament_diameter * filament_diameter / 4.0;
 }
 
 // --------------------------------------------------------------
@@ -82,9 +73,6 @@ static double e_per_xyz() // (ratio) mm / mm
   double delta_e = gcode_next_pos()[3] - g_PrevGcodePos[3];
 
   double e = delta_e / ln;
-  if (g_IsVolumetric) {
-    e = e_from_volumetric(e);
-  } 
 
   return e;
 }
@@ -95,10 +83,7 @@ double motion_get_current_flow() // mm^3 / sec
 {
   double delta_e = gcode_next_pos()[3] - g_PrevGcodePos[3];
 
-  double vl = delta_e * g_FilamentCrossArea;
-  if (g_IsVolumetric) {
-    vl = delta_e;
-  } 
+  double vl = delta_e * filament_cross_section(g_FilamentDiamenter);
 
   if (gcode_speed() < 1) {
     return 0.0;
@@ -133,10 +118,6 @@ double motion_step(double delta_ms, bool& _done)
   v3d    step_pos = 0.0;
 
   g_Current_EperXYZ = e_per_xyz();
-
-  if (g_IsVolumetric) {
-    delta_e = e_from_volumetric(delta_e);
-  } 
 
   g_IsTravel = abs(delta_e) < 1e-6;
 

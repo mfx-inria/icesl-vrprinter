@@ -40,7 +40,6 @@ int           g_RTHeight = 1024;
 v2f           g_BedSize(200.0f, 200.0f);
 float         g_FilamentDiameter = 1.75f;
 float         g_NozzleDiameter = 0.4f;
-bool          g_isVolumetric = false;
 bool          g_isCentered = false;
 int           g_NumExtruders = 1;
 vector<pair<float, float>> g_Extruders_offset;

@@ -171,7 +171,7 @@ int main(int argc, const char* argv[])
   emscripten_run_script(command.c_str());
 #endif
 
-motion_start(g_FilamentDiameter, g_isVolumetric);
+motion_start(g_FilamentDiameter);
 
 printer_reset();
 
@@ -288,10 +288,10 @@ void printer_reset()
   g_PrevPos      = v3d(0.0);
   g_PrevPrevPos  = v3d(0.0);
 
-  g_NumExtruders = 1;
+  g_NumExtruders = gcode_extruders() > 0 ? gcode_extruders() : 1;
   g_Extruders_offset.clear();
 
-  g_Trajectory    .clear();
+  g_Trajectory.clear();
   g_HeightSegments.clear();
   g_GlobalDepositionLength = 0.0f;
 
@@ -305,7 +305,8 @@ void printer_reset()
     }
   }
   g_HeightField.fill((float)prev_z);
-  motion_reset(g_FilamentDiameter, g_isVolumetric);
+
+  motion_reset(g_FilamentDiameter);
 
   // stats
   g_DanglingTrajectory.clear();
@@ -338,7 +339,7 @@ void session_start()
   cerr << "gcode has " << g_LastLine << " line(s)" << endl;
 
   // get the number of extruders used
-  g_NumExtruders = gcode_extruders_list().size() > 0 ? gcode_extruders_list().size() : 1;
+  g_NumExtruders = gcode_extruders() > 0 ? gcode_extruders() : 1;
   // prepare the extruders offsets
   g_Extruders_offset.resize(g_NumExtruders);
   for (auto i = 0; i != g_Extruders_offset.size(); i++) {
@@ -346,13 +347,7 @@ void session_start()
     g_Extruders_offset[i].second = 0.0f;
   }
 
-  // detect volumetric extrusion
-  if (gcode_volumetric_mode()) {
-    g_isVolumetric = gcode_volumetric_mode();
-    g_FilamentDiameter = (float)gcode_filament_dia();
-  }
-
-  // gcode_reset(); PB NOTE: already called at the start of printer_reset()
+  g_FilamentDiameter = (float)gcode_filament_dia();
 
   // height field
   int hszx = (int)ceil(g_HeightFieldBox.extent()[0] / c_HeightFieldStep);
@@ -726,7 +721,7 @@ void mainRender()
   if (LibSL::System::File::exists("/print.gcode")) {
     g_GCode_string = loadFileIntoString("/print.gcode");
     session_start();
-    motion_start(g_FilamentDiameter, g_isRelative, g_isVolumetric);
+    motion_start(g_FilamentDiameter);
     std::remove("/print.gcode");
     g_ForceRedraw = true;
   }
@@ -982,8 +977,9 @@ void ImGuiPanel()
     if (ImGui::CollapsingHeader("File")) {
       if (ImGui::Button("Load a new Gcode")) {
         g_GCode_string = load_gcode();
+        g_FilamentDiameter = 1.75f;
         session_start();
-        motion_start(g_FilamentDiameter, g_isVolumetric);
+        motion_start(g_FilamentDiameter);
         printer_reset();
         g_ForceRedraw = true;
       }
@@ -1012,8 +1008,6 @@ void ImGuiPanel()
           }
         }
       }
-      // volumetric extrusion
-      ImGui::Checkbox("Volumetric extrusion", &g_isVolumetric);
       // bed dimmensions
       ImGui::InputFloat("Bed X size", &g_BedSize[0], 0.5f, 1.0f, "%.3f");
       ImGui::InputFloat("Bed Y size", &g_BedSize[1], 0.5f, 1.0f, "%.3f");

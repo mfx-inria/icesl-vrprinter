@@ -12,13 +12,13 @@ typedef AutoPtr<t_parser> t_parser_ptr;
 t_stream_ptr g_Stream;
 t_parser_ptr g_Parser;
 
-std::vector<int> g_Extruders;
-int              g_CurrentExtruder = 0;
+std::set<int> g_Extruders;
+int           g_CurrentExtruder = 0;
 
 bool         g_ExtrusionMode = false; // false -> absolute extrusion | true - > relative extrusion 
 bool         g_VolumetricMode = false;
 
-double       g_FilDiameter = 0.0; // used only when volumetric extrusion is detected
+double       g_FilDiameter = 1.75; // used when volumetric extrusion is detected
 
 v4d          g_Pos(0.0);
 v4d          g_Offset(0.0);
@@ -30,11 +30,15 @@ bool         g_GCodeError = false;
 // --------------------------------------------------------------
 
 static void set_extruder(int extruder) {
-  //check if we already registered the extruder
-  if (!(std::find(g_Extruders.begin(), g_Extruders.end(), extruder) != g_Extruders.end())) {
-    g_Extruders.push_back(extruder); // register new extruder
-  }
+  g_Extruders.insert(extruder);
   g_CurrentExtruder = extruder;
+}
+
+// --------------------------------------------------------------
+
+static double e_from_volumetric(double e_vol)
+{
+  return e_vol / (pow(g_FilDiameter / 2, 2) * M_PI);
 }
 
 // --------------------------------------------------------------
@@ -42,17 +46,7 @@ static void set_extruder(int extruder) {
 void gcode_start(const char *gcode)
 {
   g_GCode  = gcode;
-  g_Stream = t_stream_ptr(new t_stream(g_GCode,(uint)strlen(g_GCode)+1));
-  g_Parser = t_parser_ptr(new t_parser(*g_Stream,false));
-  g_Pos = 0.0f;
-  g_Offset = 0.0f;
-  g_Speed = 20.0f;
-  g_CurrentExtruder = 0;
-  g_Line = 0;
-  g_GCodeError = false;
-  g_ExtrusionMode = false;
-  g_VolumetricMode = false;
-  g_FilDiameter = 0.0;
+  gcode_reset();
 }
 
 // --------------------------------------------------------------
@@ -62,15 +56,18 @@ void gcode_reset()
   sl_assert(g_GCode != NULL);
   g_Stream = t_stream_ptr(new t_stream(g_GCode, (uint)strlen(g_GCode) + 1));
   g_Parser = t_parser_ptr(new t_parser(*g_Stream, false));
-  g_Pos = 0.0f;
-  g_Offset = 0.0f;
-  g_Speed = 20.0f;
+
   g_CurrentExtruder = 0;
-  g_Line = 0;
-  g_GCodeError = false;
+  g_FilDiameter = 1.75;
   g_ExtrusionMode = false;
   g_VolumetricMode = false;
-  g_FilDiameter = 0.0;
+
+  g_Line = 0;
+  g_GCodeError = false;
+
+  g_Pos = 0.0f;
+  g_Offset = 0.0f;
+  g_Speed = 20.0f;  
 }
 
 // --------------------------------------------------------------
@@ -83,11 +80,9 @@ bool gcode_advance()
     g_Line ++;
     c = g_Parser->readChar();
     c = tolower(c);
-    if (c == 'g') {
+    if (c == 'g') { // G gcode
       int n = g_Parser->readInt();
       if (n == 0 || n == 1) { // G0 G1
-        //v4d pos_before = g_Pos;
-        //double e_raw   = 0.0f;
         while (!g_Parser->eof()) {
           c = g_Parser->readChar();
           if (c == '\n') break;
@@ -97,28 +92,28 @@ bool gcode_advance()
           }
           c = tolower(c);
           double f = g_Parser->readDouble();
-          if (c >= 'x' && c <= 'z') {
+          if (c >= 'x' && c <= 'z') { // XYZ coordinates
             g_Pos[c - 'x'] = f + g_Offset[c - 'x'];
-          } else if (c == 'e') {  
-            // if relative extrusion is detected, individual extrusion steps are merged
-            // to be like absolute extrusion
-            if (g_ExtrusionMode) { 
-              g_Pos[3] = g_Pos[3] + f + g_Offset[3];
-            } else {
-              g_Pos[3] = f + g_Offset[3];
+          } else if (c == 'e') { // E extrusion value
+            double e = f;
+            if (g_VolumetricMode) { // convert the e_value back to a length
+              e = e_from_volumetric(f);
             }
-            //e_raw    = f;
-          } else if (c == 'f') {
+            if (g_ExtrusionMode) { // if relative extrusion is detected, individual extrusion steps are merged to behave like absolute extrusion
+              e = g_Pos[3] + f;
+            }
+            g_Pos[3] = e + g_Offset[3];
+          } else if (c == 'f') { // F feedrate
             g_Speed = f / 60.0f;
-          } else if (c >= 'a' && c <= 'f') {
+          } else if (c >= 'a' && c <= 'f') { // ABCDH mixing ratios
             // TODO mixing ratios
           } else {
             g_GCodeError = true;
             return false;
           }
         }
+#if 0
         // flow check (DEBUG)
-        /*
         double ln = length(v3d(g_Pos) - v3d(pos_before));
         if (ln > 1e-6f) {
           double ex = g_Pos[3] - pos_before[3];
@@ -127,9 +122,9 @@ bool gcode_advance()
             std::cerr << ex / ln << ' ';
           }
         }
-        */
+#endif
         break; // done advancing
-      } else if (n == 92) { // G92
+      } else if (n == 92) { // G92 reset axis values
         while (!g_Parser->eof()) {
           c = g_Parser->readChar();
           if (c == '\n') break;
@@ -137,7 +132,7 @@ bool gcode_advance()
           double f = g_Parser->readDouble();
           if (c >= 'x' && c <= 'z') {
             g_Offset[c - 'x'] = g_Pos[c - 'x'] - f;
-          } else if (c == 'e') {
+          } else if (c == 'e') { // G92 E0 extruder values reset
             g_Offset[3] = g_Pos[3] - f;
           }
         }
@@ -148,7 +143,7 @@ bool gcode_advance()
       } else { // other => ignore
         g_Parser->reachChar('\n');
       }
-    } else if (c == 'm') {
+    } else if (c == 'm') { // M gcode
       int n = g_Parser->readInt();
       if (n == 82) { // M82: absolute extrusion
         g_ExtrusionMode = false;
@@ -162,7 +157,7 @@ bool gcode_advance()
           c = tolower(c);
           double d = g_Parser->readDouble();
           if (c == 'd') {
-            g_FilDiameter = d; // update the filament diameter with the one provide by M200
+            g_FilDiameter = d; // update the filament diameter with the one provided by M200
           } else {
             g_Parser->reachChar('\n');
           }
@@ -170,7 +165,7 @@ bool gcode_advance()
       } else { // other => ignore
         g_Parser->reachChar('\n');
       }
-    } else if (c == 't') {
+    } else if (c == 't') { // T tool selection
       int e = g_Parser->readInt();
       set_extruder(e);
       g_Parser->reachChar('\n');
@@ -179,7 +174,15 @@ bool gcode_advance()
     } else if (c == '<') {
       g_Parser->reachChar('\n');
     } else if (c == ';') {
-      g_Parser->reachChar('\n');
+      if (g_Line <= 5) {
+        std::string s = g_Parser->readString();
+        if (s == "FLAVOR:UltiGCode") { // detecting UltiGcode to enable volumetric extrusion
+          g_VolumetricMode = true;
+          g_FilDiameter = 2.85;
+        }
+      } else {
+        g_Parser->reachChar('\n');
+      }
     } else if (c == '\r') {
       g_Parser->reachChar('\n');
     } else if (c == '\0' || c == -1) {
@@ -209,10 +212,9 @@ double gcode_speed()
 
 // --------------------------------------------------------------
 
-std::vector<int> gcode_extruders_list()
+size_t gcode_extruders()
 {
-  std::sort(g_Extruders.begin(), g_Extruders.end());
-  return g_Extruders;
+  return g_Extruders.size();
 }
 
 // --------------------------------------------------------------

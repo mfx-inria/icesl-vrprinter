@@ -16,8 +16,8 @@ v4d  gcode_next_pos();
 // returns the speed in mm/sec
 double gcode_speed();
 
-// return the list of used extruders
-std::vector<int> gcode_extruders_list();
+// return the number of used extruders
+size_t gcode_extruders();
 
 // returns the current extruder
 int gcode_current_extruder();
