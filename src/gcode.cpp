@@ -15,7 +15,7 @@ t_parser_ptr g_Parser;
 std::set<int> g_Extruders;
 int           g_CurrentExtruder = 0;
 
-bool         g_ExtrusionMode = false; // false -> absolute extrusion | true - > relative extrusion 
+bool         g_RelativeExMode = false; // false -> absolute extrusion | true - > relative extrusion 
 bool         g_VolumetricMode = false;
 
 double       g_FilDiameter = 1.75; // used when volumetric extrusion is detected
@@ -59,7 +59,7 @@ void gcode_reset()
 
   g_CurrentExtruder = 0;
   g_FilDiameter = 1.75;
-  g_ExtrusionMode = false;
+  g_RelativeExMode = false;
   g_VolumetricMode = false;
 
   g_Line = 0;
@@ -99,13 +99,13 @@ bool gcode_advance()
             if (g_VolumetricMode) { // convert the e_value back to a length
               e = e_from_volumetric(f);
             }
-            if (g_ExtrusionMode) { // if relative extrusion is detected, individual extrusion steps are merged to behave like absolute extrusion
+            if (g_RelativeExMode) { // if relative extrusion is detected, individual extrusion steps are merged to behave like absolute extrusion
               e = g_Pos[3] + f;
             }
             g_Pos[3] = e + g_Offset[3];
           } else if (c == 'f') { // F feedrate
             g_Speed = f / 60.0f;
-          } else if (c >= 'a' && c <= 'f') { // ABCDH mixing ratios
+          } else if (c >= 'a' && c <= 'd' && c == 'h') { // ABCDH mixing ratios
             // TODO mixing ratios
           } else {
             g_GCodeError = true;
@@ -146,9 +146,9 @@ bool gcode_advance()
     } else if (c == 'm') { // M gcode
       int n = g_Parser->readInt();
       if (n == 82) { // M82: absolute extrusion
-        g_ExtrusionMode = false;
+        g_RelativeExMode = false;
       } else if (n == 83) { // M83 relative extrusion
-        g_ExtrusionMode = true;
+        g_RelativeExMode = true;
       } else if (n == 200) { // M200 set filament diameter & enable volumetric extrusion
         g_VolumetricMode = true;
         while (!g_Parser->eof()) {
@@ -174,15 +174,14 @@ bool gcode_advance()
     } else if (c == '<') {
       g_Parser->reachChar('\n');
     } else if (c == ';') {
-      if (g_Line <= 5) {
+      if (g_Line == 1) {
         std::string s = g_Parser->readString();
         if (s == "FLAVOR:UltiGCode") { // detecting UltiGcode to enable volumetric extrusion
           g_VolumetricMode = true;
           g_FilDiameter = 2.85;
         }
-      } else {
-        g_Parser->reachChar('\n');
       }
+      g_Parser->reachChar('\n');
     } else if (c == '\r') {
       g_Parser->reachChar('\n');
     } else if (c == '\0' || c == -1) {
@@ -236,13 +235,6 @@ int gcode_line()
 bool gcode_error() 
 {
   return g_GCodeError;
-}
-
-// --------------------------------------------------------------
-
-bool gcode_volumetric_mode()
-{
-  return g_VolumetricMode;
 }
 
 // --------------------------------------------------------------
