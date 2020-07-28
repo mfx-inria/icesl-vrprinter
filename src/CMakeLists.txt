@@ -1,54 +1,65 @@
-CMAKE_MINIMUM_REQUIRED(VERSION 2.6)
-Project(icesl-vrprint)
+cmake_minimum_required(VERSION 3.0.0)
 
-include(UseCXX11)
+project(icesl-webprinter)
 
-IF(EMSCRIPTEN)
-SET(CMAKE_EXE_LINKER_FLAGS "-s TOTAL_MEMORY=536870912 --bind -s FORCE_FILESYSTEM=1")
-SET(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} --bind -std=c++11 -s FORCE_FILESYSTEM=1")
-ENDIF(EMSCRIPTEN)
+include(UseCXX17)
 
-IF (LIBSL_USE_GLUX)
-ADD_DEFINITIONS(-DUSE_GLUX)
-IF(NOT WIN32)
-ADD_DEFINITIONS(-DGL_ARB_multitexture=1)  # hack due to MESA headers including ARB_multitexture
-ENDIF(NOT WIN32)
-ENDIF (LIBSL_USE_GLUX)
+if(EMSCRIPTEN)
+  set(CMAKE_EXE_LINKER_FLAGS "-s TOTAL_MEMORY=536870912 --bind -s FORCE_FILESYSTEM=1")
+  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} --bind -std=c++11 -s FORCE_FILESYSTEM=1")
+endif(EMSCRIPTEN)
+
+if(LIBSL_USE_GLUX)
+  add_definitions(-DUSE_GLUX)
+  if(NOT WIN32)
+    add_definitions(-DGL_ARB_multitexture=1)  # hack due to MESA headers including ARB_multitexture
+  endif(NOT WIN32)
+endif(LIBSL_USE_GLUX)
 
 ADD_DEFINITIONS(-DOPENGL)
 
 include_directories(
 	${CMAKE_CURRENT_SOURCE_DIR}
-  )
+)
 
-ADD_EXECUTABLE(icesl-vrprint
-  icesl-vrprint.cpp
-  icesl-vrprint.h
+add_executable(icesl-webprinter
+  icesl-webprinter.h
+  icesl-webprinter.cpp
+
+  FileDialog.h
+  FileDialog.cpp
+
   sphere_squash.h
-  shapes.cpp
   shapes.h
-  bed.cpp
+  shapes.cpp
+
   bed.h
-  gcode.cpp
+  bed.cpp
+
   gcode.h
+  gcode.cpp
+
   motion.cpp
   motion.h
+
+  #shaders
+  final.h
   final.fp
   final.vp
-  final.h
+  
+  simple.h
   simple.fp
   simple.vp
-  simple.h
+  
+  deposition.h
   deposition.fp
-  deposition.vp
-  deposition.h  
+  deposition.vp  
 )
 
 AUTO_BIND_SHADERS( simple final deposition )
 
-target_link_libraries(icesl-vrprint
+target_link_libraries(icesl-webprinter
   LibSL 
   LibSL_gl
-  libcore # is linked only for filedialog ?
-  )
- 
+  tinyfiledialogs
+)
