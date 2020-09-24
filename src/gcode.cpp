@@ -105,8 +105,23 @@ bool gcode_advance()
             g_Pos[3] = e + g_Offset[3];
           } else if (c == 'f') { // F feedrate
             g_Speed = f / 60.0f;
-          } else if (c >= 'a' && c <= 'd' && c == 'h') { // ABCDH mixing ratios
+          } else if ((c >= 'a' && c <= 'd') || c == 'h') { // ABCDH mixing ratios
             // TODO mixing ratios
+            /*
+            if (c == 'a') {
+              //TODO
+            } else if (c == 'b') {
+              //TODO
+            } else if (c == 'c') {
+              //TODO
+            } else if (c == 'd') {
+              //TODO
+            } else if (c == 'h') {
+              //TODO
+            }
+            */
+            g_Parser->reachChar('\n');
+            break;
           } else {
             g_GCodeError = true;
             return false;
