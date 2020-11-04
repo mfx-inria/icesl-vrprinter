@@ -1,3 +1,25 @@
+########################################
+#### icesl-webprinter specifi files ####
+########################################
+
+# build directory
+*build/
+
+# builded binaries directory
+*bin/
+
+# compiled js and web assembly
+icesl-webprinter.js
+icesl-webprinter.wasm
+
+# packed files for web assembly
+files.js
+*.data
+
+################################
+#### Generic compiled files ####
+################################
+
 # Prerequisites
 *.d
 
@@ -33,9 +55,3 @@
 
 # Visual Studio files
 *.vs/
-
-# build directory
-*build/
-
-# builded binaries directory
-*bin/

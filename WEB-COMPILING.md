@@ -11,11 +11,19 @@
 > You will also need [MinGW](http://www.mingw.org/wiki/Getting_Started#toc1), and to [add it properly to the PATH](http://www.mingw.org/wiki/Getting_Started#toc7)
 
 3. Compile VR-printer:
+Manual compiling:
 ```shell
   mkdir [path/to/build]/emcc
   cd [path/to/build]/emcc
   emcmake cmake -DCMAKE_BUILD_TYPE=Release [path/to/source]
-  emmake make IceSL-webprinter
+  emmake make icesl-webprinter
+  cd [path/to/source]/www
+  ./js_package.sh #or js_package.bat on Windows
+```
+Automated Compiling:
+```shell
+  cd [path/to/source]
+  ./emcc_build.sh #or emcc_build.bat on Windows
   cd [path/to/source]/www
   ./js_package.sh #or js_package.bat on Windows
 ```
@@ -36,10 +44,18 @@ Copy the following files to **$VRPRINTER_WEBSITE/**:
 > (*) mandatory when redeploying
 
 5. FAST COMPILATION (at least one past succesfull compilation needed):
+Manual compiling:
 ```shell
   cd [path/to/build]/emcc 
   emcmake cmake -DCMAKE_BUILD_TYPE=Release [path/to/source]
-  emmake make IceSL-webprinter
+  emmake make icesl-webprinter
   cd [path/to/source]/www
   ./js_package.sh # or js_package.bat on Windows
+```
+Automated Compiling:
+```shell
+  cd [path/to/source]
+  ./emcc_build.sh #or emcc_build.bat on Windows
+  cd [path/to/source]/www
+  ./js_package.sh #or js_package.bat on Windows
 ```

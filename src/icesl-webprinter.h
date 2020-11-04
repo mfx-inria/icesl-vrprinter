@@ -240,7 +240,7 @@ void mainMouseButton(uint x, uint y, uint btn, uint flags);
 
 void session_start();
 void printer_reset();
-string load_gcode(std::string file = std::string()); // load a gcode file and return it as a string
+void load_gcode(std::string file = std::string()); // load a gcode file and return it as a string
 void gen_histogram(std::map<int, float> &map, Histogram &histo, float filter = 1.0f);
 void export_histogram(std::string fname, Histogram &h);
 string getFileName(const string& s);

@@ -57,16 +57,15 @@ int main(int argc, const char* argv[])
   {
     std::cerr << "Error: unknown exception caught" << std::endl;
   }
+
+  if (!cmd_gcode.empty()) {
+    g_GCode_path = cmd_gcode.c_str();
+  }
 #endif
 
   /// load gcode
-  if (!cmd_gcode.empty()) {
-    g_GCode_string = load_gcode(cmd_gcode.c_str());
-  }
-  else {
-    g_GCode_string = load_gcode();
-  }
-
+  load_gcode(g_GCode_path);
+  g_GCode_string = loadFileIntoString(g_GCode_path.c_str());
   session_start();
 
 #ifndef EMSCRIPTEN
@@ -157,11 +156,13 @@ int main(int argc, const char* argv[])
   TrackballUI::trackball().setUp(Trackball::Z_neg);
 
   /// view selection
+#ifndef EMSCRIPTEN
   if (cmd_view > 0 && cmd_view <= 7) {
     std::string view_file = "trackball.F0";
     view_file += to_string(cmd_view);
     TrackballUI::trackballLoad(view_file.c_str());
   }
+#endif
 
   SimpleUI::initImGui();
 
@@ -188,7 +189,7 @@ return 0;
 
 // ----------------------------------------------------------------
 
-std::string load_gcode(std::string file) {
+void load_gcode(std::string file) {
   if (file.empty()) {
 #ifdef EMSCRIPTEN
     emscripten_run_script("parseCommandLine();\n");
@@ -201,13 +202,11 @@ std::string load_gcode(std::string file) {
       std::cerr << Console::red << "No file provided - Abording!" << Console::gray << std::endl;
       exit(0);
     }
+#endif
   }
   else {
     g_GCode_path = file;
   }
-#endif
-  //g_GCode_fname = getFileName(g_GCode_path.c_str());
-  return loadFileIntoString(g_GCode_path.c_str());;
 }
 
 // ----------------------------------------------------------------
@@ -976,7 +975,8 @@ void ImGuiPanel()
     ImGui::SetNextTreeNodeOpen(true);
     if (ImGui::CollapsingHeader("File")) {
       if (ImGui::Button("Load a new Gcode")) {
-        g_GCode_string = load_gcode();
+        load_gcode();
+        g_GCode_string = loadFileIntoString(g_GCode_path.c_str());
         g_FilamentDiameter = 1.75f;
         session_start();
         motion_start(g_FilamentDiameter);
