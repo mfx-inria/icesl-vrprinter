@@ -80,9 +80,9 @@ int main(int argc, const char* argv[])
     Histogram hd, ho;
     gen_histogram(g_DanglingHisto, hd);
     gen_histogram(g_OverlapHisto, ho);
-    std::cerr << Console::green << "\n== unsupported ==" << Console::gray << std::endl;
+    std::cout << Console::green << "\n== unsupported ==" << Console::gray << std::endl;
     hd.print();
-    std::cerr << Console::green << "==  overlaps   ==" << Console::gray << std::endl;
+    std::cout << Console::green << "==  overlaps   ==" << Console::gray << std::endl;
     ho.print();
 
     // export as a .tex histogram
@@ -131,9 +131,13 @@ int main(int argc, const char* argv[])
 
   /// shaders init
 #ifdef EMSCRIPTEN
-  g_ShaderSimple.emscripten = "precision mediump float;\n";
-  g_ShaderDeposition.emscripten = "precision mediump float;\n";
-  g_ShaderFinal.emscripten = "precision mediump float;\n";
+  g_ShaderSimple.settings = "#version 300 es\nprecision mediump float;\nprecision mediump int;\n";
+  g_ShaderDeposition.settings = "#version 300 es\nprecision mediump float;\n";
+  g_ShaderFinal.settings = "#version 300 es\nprecision mediump float;\nprecision mediump int;\n";
+#else
+  g_ShaderSimple.settings = "#version 430 core\n";
+  g_ShaderDeposition.settings = "#version 430 core\n";
+  g_ShaderFinal.settings = "#version 430 core\n";
 #endif
   g_ShaderSimple.init(); // shader for simple drawing
   g_ShaderDeposition.init(); // shader for drawing deposited material
@@ -256,7 +260,7 @@ void export_histogram(std::string fname, Histogram &h) {
   // generate latex file
   ofstream file (fname);
   if (file.is_open()) {
-    std::cerr << Console::blue << "Generate statistics file : " << fname << Console::gray << std::endl;
+    std::cout << Console::blue << "Generate statistics file : " << fname << Console::gray << std::endl;
     h.printAsTex(file, "", "", y_label.c_str());
     file.close();
   }
@@ -283,6 +287,7 @@ string getFileName(const string& s) {
 
 void printer_reset()
 {
+  // TODO: track state of gcode (if different, make a 1st pass link in session_start() to correctly fetch extruder number)
   gcode_reset();
   g_PrevPos      = v3d(0.0);
   g_PrevPrevPos  = v3d(0.0);
@@ -335,7 +340,7 @@ void session_start()
 #endif
   }
   g_LastLine = gcode_line();
-  cerr << "gcode has " << g_LastLine << " line(s)" << endl;
+  std::cout << "gcode has " << g_LastLine << " line(s)" << std::endl;
 
   // get the number of extruders used
   g_NumExtruders = gcode_extruders() > 0 ? gcode_extruders() : 1;
@@ -351,11 +356,11 @@ void session_start()
   // height field
   int hszx = (int)ceil(g_HeightFieldBox.extent()[0] / c_HeightFieldStep);
   int hszy = (int)ceil(g_HeightFieldBox.extent()[1] / c_HeightFieldStep);
-  cerr << "Allocated height field " << printByteSize(hszx * hszy * sizeof(float)) << endl;
+  std::cout << "Allocated height field " << printByteSize(hszx * hszy * sizeof(float)) << std::endl;
   g_HeightField.allocate(hszx, hszy);
 
   // reset printer
-  printer_reset();
+  //printer_reset();
 }
 
 // ----------------------------------------------------------------
@@ -1157,10 +1162,10 @@ void mainMouseButton(uint x, uint y, uint btn, uint flags)
 
   if (btn == LIBSL_WHEEL_UP) {
     g_ZoomTarget = g_ZoomTarget*1.05f;
-    std::cerr << Console::red << "zoom in" << Console::gray << std::endl;
+    std::cout << Console::red << "zoom in" << Console::gray << std::endl;
   } else if (btn == LIBSL_WHEEL_DOWN) {
     g_ZoomTarget = g_ZoomTarget / 1.05f;
-    std::cerr << Console::green << "zoom in" << Console::gray << std::endl;
+    std::cout << Console::green << "zoom in" << Console::gray << std::endl;
   }
 }
 

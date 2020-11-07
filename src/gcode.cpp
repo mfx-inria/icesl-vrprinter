@@ -21,7 +21,7 @@ bool         g_VolumetricMode = false;
 double       g_FilDiameter = 1.75; // used when volumetric extrusion is detected
 
 v4d          g_Pos(0.0);
-v4d          g_Offset(0.0);
+v4d          g_Offset(0.0); // TODO : rework to have offset per extruder/tool
 double       g_Speed = 20.0;
 int          g_Line = 0;
 const char  *g_GCode = NULL;
@@ -57,6 +57,8 @@ void gcode_reset()
   g_Stream = t_stream_ptr(new t_stream(g_GCode, (uint)strlen(g_GCode) + 1));
   g_Parser = t_parser_ptr(new t_parser(*g_Stream, false));
 
+  //g_Extruders.clear();
+  //set_extruder(0);
   g_CurrentExtruder = 0;
   g_FilDiameter = 1.75;
   g_RelativeExMode = false;
@@ -121,7 +123,6 @@ bool gcode_advance()
             }
             */
             g_Parser->reachChar('\n');
-            break;
           } else {
             g_GCodeError = true;
             return false;
@@ -144,12 +145,15 @@ bool gcode_advance()
           c = g_Parser->readChar();
           if (c == '\n') break;
           c = tolower(c);
-          double f = g_Parser->readDouble();
+          double d = g_Parser->readDouble();
           if (c >= 'x' && c <= 'z') {
-            g_Offset[c - 'x'] = g_Pos[c - 'x'] - f;
+            g_Offset[c - 'x'] = g_Pos[c - 'x'] - d;
           } else if (c == 'e') { // G92 E0 extruder values reset
-            g_Offset[3] = g_Pos[3] - f;
+            g_Offset[3] = g_Pos[3] - d;
           }
+        }        
+        if (gcode_extruders() > 2) { // Dirty fix
+          g_Parser->reachChar('\n'); // PB NOTE: fixes the latence when switching between multiple extruders (when more than 2 extruders are present) but breaks dual extrusion managment?
         }
       } else if (n == 10) { // G10
         g_Parser->reachChar('\n');
@@ -162,8 +166,10 @@ bool gcode_advance()
       int n = g_Parser->readInt();
       if (n == 82) { // M82: absolute extrusion
         g_RelativeExMode = false;
+        g_Parser->reachChar('\n');
       } else if (n == 83) { // M83 relative extrusion
         g_RelativeExMode = true;
+        g_Parser->reachChar('\n');
       } else if (n == 200) { // M200 set filament diameter & enable volumetric extrusion
         g_VolumetricMode = true;
         while (!g_Parser->eof()) {
@@ -173,10 +179,9 @@ bool gcode_advance()
           double d = g_Parser->readDouble();
           if (c == 'd') {
             g_FilDiameter = d; // update the filament diameter with the one provided by M200
-          } else {
-            g_Parser->reachChar('\n');
           }
         }
+        g_Parser->reachChar('\n');
       } else { // other => ignore
         g_Parser->reachChar('\n');
       }
@@ -195,8 +200,15 @@ bool gcode_advance()
           g_VolumetricMode = true;
           g_FilDiameter = 2.85;
         }
+      } else if (g_Line == 4) {
+        std::string s = g_Parser->readString();
+        if (s == "FLAVOR:Griffin") { // detecting UltiGcode (Ultimaker 3 or newer) to enable volumetric extrusion
+          g_VolumetricMode = false;
+          g_FilDiameter = 2.85;
+        }
+      } else {
+        g_Parser->reachChar('\n');
       }
-      g_Parser->reachChar('\n');
     } else if (c == '\r') {
       g_Parser->reachChar('\n');
     } else if (c == '\0' || c == -1) {

@@ -14,10 +14,16 @@ void bed_init()
 {
   g_ShaderBed.init(
     // VP
-    "attribute vec4 mvf_vertex;\n"
+  #ifndef EMSCRIPTEN
+    "#version 430 core\n"
+  #else
+    "#version 300 es\n"
+    "precision mediump float;\n"
+  #endif
+    "in vec4 mvf_vertex;\n"
     "uniform mat4 u_view;\n"
     "uniform mat4 u_mdl;\n"
-    "varying vec3 v_vertex;\n"
+    "out vec3 v_vertex;\n"
     "void main()\n"
     "{\n"
     "	  v_vertex = mvf_vertex.xyz;\n"
@@ -25,11 +31,15 @@ void bed_init()
     "}\n"
     ,
     //FP
-  #ifdef EMSCRIPTEN
+  #ifndef EMSCRIPTEN
+    "#version 430 core\n"
+  #else
+    "#version 300 es\n"
     "precision mediump float;\n"
   #endif
     "uniform vec2 u_tex_scale;\n"
-    "varying vec3 v_vertex;\n"
+    "in vec3 v_vertex;\n"
+    "out vec4 fragColor;"
     "float grid(vec2 tc, float step, float ddu, float ddv)\n"
     "{\n"
     "vec2 fr = fract((tc + vec2(step,step) / 2.0) / vec2(step,step));\n"
@@ -44,6 +54,10 @@ void bed_init()
     "vec2 tc = v_vertex.xy * u_tex_scale;\n"
     "float ddu = max(abs(dFdx(tc).x), abs(dFdy(tc).x));\n"
     "float ddv = max(abs(dFdx(tc).y), abs(dFdy(tc).y));\n"
+    /*
+    "float ddu = 1.0;\n"
+    "float ddv = 1.0;\n"
+    */
     "float g = grid(tc, 10.0, ddu, ddv);\n"
     "float db = min(\n"
     "  (0.5 - abs(v_vertex.x - 0.5)) * u_tex_scale.x,\n"
@@ -52,7 +66,7 @@ void bed_init()
     "float b = (db > 2.0) ? 0.0 : 1.0;\n"
     "vec4  clr = g * (1.0 - b) * vec4(0.7, 0.7, 0.7, 0.9)\n"
     "          + b * vec4(0.0, 0.0, 0.0, 1.0);\n"
-    "gl_FragColor = clr;\n"
+    "fragColor = clr;\n"
     "\n}"
   );
   g_bed_view.init(g_ShaderBed, "u_view");

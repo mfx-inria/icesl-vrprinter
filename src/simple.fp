@@ -1,16 +1,18 @@
-#string emscripten
+#string settings
 
-varying vec4   v_color;
+in vec4 v_color;
 
-varying vec2      v_tex;
+in vec2 v_tex;
 uniform sampler2D u_tex;
 uniform int       u_use_tex;
+
+out vec4 fragColor;
 
 void main()
 {
   if (u_use_tex == 1) {
-    gl_FragColor = vec4( fract(texture2D(u_tex, v_tex).x /10.0) );
+    fragColor = vec4( fract(texture(u_tex, v_tex).x /10.0) );
   } else {
-    gl_FragColor = v_color;
+    fragColor = v_color;
   }
 }

@@ -1,6 +1,6 @@
-#string emscripten
+#string settings
 
-varying vec3   v_pos;
+in vec3   v_pos;
 
 uniform float  u_ZNear;
 uniform float  u_ZFar;
@@ -9,8 +9,10 @@ uniform float  u_extruder; // never 0, 1 for extruder 0
 
 uniform float  u_bridge;
 
-varying float  v_dangling;
-varying float  v_overlap;
+in float  v_dangling;
+in float  v_overlap;
+
+out vec4 fragColor;
 
 void main()
 {  
@@ -21,8 +23,8 @@ void main()
   float o   = clamp(v_overlap  * 0.5, 0.0, 0.45);
 
   if (u_bridge == 1.0) { // special case for bridges
-    gl_FragColor = vec4(z_l, z_h, 1.0, u_extruder / 255.0);
+    fragColor = vec4(z_l, z_h, 1.0, u_extruder / 255.0);
   } else {
-    gl_FragColor = vec4(z_l, z_h, (o == 0.0 ? d : 0.5 + o), u_extruder / 255.0);
+    fragColor = vec4(z_l, z_h, (o == 0.0 ? d : 0.5 + o), u_extruder / 255.0);
   }
 }

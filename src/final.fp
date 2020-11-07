@@ -1,6 +1,6 @@
-#string emscripten
+#string settings
 
-varying vec2      v_uv;
+in vec2      v_uv;
 
 uniform sampler2D u_texpts;
 uniform vec3      u_pixsz; // v(1/w, 1/h, 0) size pixel screen space // texture space (u,v) - screen space
@@ -11,18 +11,20 @@ uniform float  u_ZFar;
 
 uniform int    u_color_overhangs;
 
+out vec4 fragColor;
+
 float decode_float(vec4 v) { return (v.x*256.0 + v.y*255.0*256.0) / 65536.0; } // it could be vec2 // reconstruct screen-space z
 float decode_tool(vec4 v) { return v.w * 255.0; }
 
 void main()
 {
-  vec4 tex = texture2D(u_texpts, v_uv * u_texscl); // current pixel
+  vec4 tex = texture(u_texpts, v_uv * u_texscl); // current pixel
 
   if (tex.w == 0.0) discard; // texture was cleared before, then z=0 means we didn't write to it
 
   float z_00 = decode_float(tex); // current z of texture
-  float z_01 = decode_float(texture2D(u_texpts, v_uv * u_texscl + u_pixsz.xz)); // z pixel to the right (should be called z_10)
-  float z_10 = decode_float(texture2D(u_texpts, v_uv * u_texscl + u_pixsz.zy)); // z pixel below (should be called z_01)
+  float z_01 = decode_float(texture(u_texpts, v_uv * u_texscl + u_pixsz.xz)); // z pixel to the right (should be called z_10)
+  float z_10 = decode_float(texture(u_texpts, v_uv * u_texscl + u_pixsz.zy)); // z pixel below (should be called z_01)
 
   float tool = decode_tool(tex);
 
@@ -33,7 +35,7 @@ void main()
   float num = 0.0;
   for (int j = -N; j <= N; j++) {
     for (int i = -N; i <= N; i++) {
-      vec4 zhl = texture2D(u_texpts, v_uv * u_texscl + u_pixsz.xy * vec2(i, j));
+      vec4 zhl = texture(u_texpts, v_uv * u_texscl + u_pixsz.xy * vec2(i, j));
       if (zhl.w > 0.0) {
         float z_ij = decode_float(zhl);
         z_avg = z_avg + z_ij;
@@ -70,7 +72,7 @@ void main()
       }
       clr = vec3(1.0 - o, 1.0 - d - o, 1.0 - d);
     }
-    gl_FragColor = vec4(ao * clr * nrm.zzz, 1.0);
+    fragColor = vec4(ao * clr * nrm.zzz, 1.0);
   } else {
     vec3 final_clr = vec3(1.0, 1.0, 1.0); // white
     if (tool == 2.0){
@@ -83,7 +85,7 @@ void main()
       final_clr = vec3(0.694, 0.494, 0.439); // IceSL brush 2
     }
 
-    gl_FragColor = vec4(ao * nrm.z * final_clr, 1.0); // ssao * diffuse * color
+    fragColor = vec4(ao * nrm.z * final_clr, 1.0); // ssao * diffuse * color
   }
   //gl_FragColor = tex;
 }

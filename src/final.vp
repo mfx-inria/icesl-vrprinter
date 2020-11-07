@@ -1,8 +1,10 @@
-attribute vec4 mvf_vertex;
+#string settings
+
+in vec4 mvf_vertex;
 
 uniform mat4   u_projview;
 
-varying vec2   v_uv;
+out vec2   v_uv;
 
 void main()
 {

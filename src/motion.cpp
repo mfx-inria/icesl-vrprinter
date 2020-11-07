@@ -149,7 +149,7 @@ double motion_step(double delta_ms, bool& _done)
   }
 
 #if 0
-  std::cerr << Console::green << "step_pos: " << step_pos
+  std::cout << Console::green << "step_pos: " << step_pos
             << Console::magenta << " step_e: " << step_e
             << Console::yellow << " delta_e: " << delta_e
             << Console::cyan << " next_e: " << gcode_next_pos()[3] << " current_e: " << g_CurrentPos[3]

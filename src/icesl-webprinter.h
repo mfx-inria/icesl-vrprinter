@@ -51,13 +51,13 @@ const float   c_ThicknessEpsilon = 0.001f; // 1 um
 float         g_StatsHeightThres = 1.2f; // mm, ignored everything below regarding overlaps and dangling
 
 float         g_MmStep = g_NozzleDiameter * 0.5f;
-float         g_UserMmStep = 1000.0f;
+float         g_UserMmStep = 100.0f;
 int           g_StartAtLine = 0;
 int           g_LastLine = 0;
 
 double        g_GlobalDepositionLength = 0.0;
 
-bool          g_ShowTrajectory = false;
+bool          g_ShowTrajectory = true;
 bool          g_ColorOverhangs = false;
 
 bool          g_AutoPause = false;

@@ -1,5 +1,7 @@
-attribute vec4 mvf_vertex;
-attribute vec3 mvf_color0;
+#string settings
+
+in vec4 mvf_vertex;
+in vec3 mvf_color0;
 
 uniform mat4   u_projection;
 uniform mat4   u_view;
@@ -11,9 +13,9 @@ uniform float  u_radius;
 uniform float  u_dangling;
 uniform float  u_overlap;
 
-varying vec3   v_pos;
-varying float  v_dangling;
-varying float  v_overlap;
+out vec3   v_pos;
+out float  v_dangling;
+out float  v_overlap;
 
 void main()
 {
