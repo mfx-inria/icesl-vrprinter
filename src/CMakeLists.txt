@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.0.0)
 
-project(icesl-webprinter)
+project(icesl-vrprinter)
 
 include(UseCXX17)
 
@@ -22,9 +22,9 @@ include_directories(
 	${CMAKE_CURRENT_SOURCE_DIR}
 )
 
-add_executable(icesl-webprinter
-  icesl-webprinter.h
-  icesl-webprinter.cpp
+add_executable(icesl-vrprinter
+  icesl-vrprinter.h
+  icesl-vrprinter.cpp
 
   FileDialog.h
   FileDialog.cpp
@@ -58,7 +58,7 @@ add_executable(icesl-webprinter
 
 AUTO_BIND_SHADERS( simple final deposition )
 
-target_link_libraries(icesl-webprinter
+target_link_libraries(icesl-vrprinter
   LibSL 
   LibSL_gl
   tinyfiledialogs

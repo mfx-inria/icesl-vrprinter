@@ -9,9 +9,9 @@
 *bin/
 
 # compiled js and web assembly
-icesl-webprinter.js
-icesl-webprinter.wasm
-icesl-webprinter.js.mem
+icesl-vrprinter.js
+icesl-vrprinter.wasm
+icesl-vrprinter.js.mem
 
 # packed files for web assembly
 files.js

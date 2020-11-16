@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.0.0)
 
-project(icesl-webprinter)
+project(icesl-vrprinter)
 
 ##################################
 #### Clang external libraries ####
@@ -83,15 +83,15 @@ add_subdirectory(src)
 #######################################
 
 if(EMSCRIPTEN)
-	set_target_properties(icesl-webprinter PROPERTIES DEBUG_POSTFIX "-d")
-	set_target_properties(icesl-webprinter PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/www/")
-	set_target_properties(icesl-webprinter PROPERTIES RUNTIME_OUTPUT_DIRECTORY_DEBUG "${CMAKE_CURRENT_SOURCE_DIR}/www/")
-	set_target_properties(icesl-webprinter PROPERTIES RUNTIME_OUTPUT_DIRECTORY_RELEASE "${CMAKE_CURRENT_SOURCE_DIR}/www/")
-	set_target_properties(icesl-webprinter PROPERTIES RUNTIME_OUTPUT_DIRECTORY_RELWITHDEBINFO "${CMAKE_CURRENT_SOURCE_DIR}/www/")
+	set_target_properties(icesl-vrprinter PROPERTIES DEBUG_POSTFIX "-d")
+	set_target_properties(icesl-vrprinter PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/www/")
+	set_target_properties(icesl-vrprinter PROPERTIES RUNTIME_OUTPUT_DIRECTORY_DEBUG "${CMAKE_CURRENT_SOURCE_DIR}/www/")
+	set_target_properties(icesl-vrprinter PROPERTIES RUNTIME_OUTPUT_DIRECTORY_RELEASE "${CMAKE_CURRENT_SOURCE_DIR}/www/")
+	set_target_properties(icesl-vrprinter PROPERTIES RUNTIME_OUTPUT_DIRECTORY_RELWITHDEBINFO "${CMAKE_CURRENT_SOURCE_DIR}/www/")
 else(EMSCRIPTEN)
-	set_target_properties(icesl-webprinter PROPERTIES DEBUG_POSTFIX "-d")
-	set_target_properties(icesl-webprinter PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/bin")
-	set_target_properties(icesl-webprinter PROPERTIES RUNTIME_OUTPUT_DIRECTORY_DEBUG "${CMAKE_CURRENT_SOURCE_DIR}/bin")
-	set_target_properties(icesl-webprinter PROPERTIES RUNTIME_OUTPUT_DIRECTORY_RELEASE "${CMAKE_CURRENT_SOURCE_DIR}/bin")
-	set_target_properties(icesl-webprinter PROPERTIES RUNTIME_OUTPUT_DIRECTORY_RELWITHDEBINFO "${CMAKE_CURRENT_SOURCE_DIR}/bin")
+	set_target_properties(icesl-vrprinter PROPERTIES DEBUG_POSTFIX "-d")
+	set_target_properties(icesl-vrprinter PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/bin")
+	set_target_properties(icesl-vrprinter PROPERTIES RUNTIME_OUTPUT_DIRECTORY_DEBUG "${CMAKE_CURRENT_SOURCE_DIR}/bin")
+	set_target_properties(icesl-vrprinter PROPERTIES RUNTIME_OUTPUT_DIRECTORY_RELEASE "${CMAKE_CURRENT_SOURCE_DIR}/bin")
+	set_target_properties(icesl-vrprinter PROPERTIES RUNTIME_OUTPUT_DIRECTORY_RELWITHDEBINFO "${CMAKE_CURRENT_SOURCE_DIR}/bin")
 endif(EMSCRIPTEN)

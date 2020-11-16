@@ -7,7 +7,7 @@ NOTE: we assume there is no curved printing, eg z grows monotically
 #include <iostream>
 #include <fstream>
 
-#include "icesl-webprinter.h"
+#include "icesl-vrprinter.h"
 
 #include "bed.h"
 #include "shapes.h"

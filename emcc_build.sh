@@ -11,5 +11,5 @@ fi
 
 cd $build_path
 emcmake cmake -DCMAKE_BUILD_TYPE=Release $source_path
-emmake make icesl-webprinter
+emmake make icesl-vrprinter
 cd $source_path
