@@ -954,28 +954,23 @@ void makeAxisMesh()
 
 void ImGuiPanel()
 {
-  if (g_Downloading) {
-    ImGui::SetNextWindowSize(ImVec2(300, 50));
-    ImGui::SetNextWindowPosCenter();
-    ImGui::Begin("Downloading ...");
-    ImGui::ProgressBar(g_DownloadProgress);
-    ImGui::End();
-  }
-
   if (!g_FatalError) {
-    // imgui
-    if (g_Downloading) {
-      ImGui::SetNextWindowSize(ImVec2(300, 50));
-      ImGui::SetNextWindowPosCenter();
-      ImGui::Begin("Downloading ...");
-      ImGui::ProgressBar(g_DownloadProgress);
-      ImGui::End();
-    }
+    // imgui panel flags
+    ImGuiWindowFlags panel_flags = 0;
+    panel_flags |= ImGuiWindowFlags_NoTitleBar;
+    panel_flags |= ImGuiWindowFlags_NoMove;
+    panel_flags |= ImGuiWindowFlags_NoResize;
+    panel_flags |= ImGuiWindowFlags_NoCollapse;
+
+    // imgui panel size & pos
     ImGui::SetNextWindowPos(ImVec2(0, 0), ImGuiSetCond_Once);
     ImGui::SetNextWindowSize(ImVec2((float)g_UIWidth, 750), ImGuiSetCond_Once);
-    ImGui::Begin("Virtual 3D printer");
+
+    // creating imgui panel
+    ImGui::Begin("Virtual 3D printer", NULL, panel_flags);
     ImGui::PushItemWidth(200);
 
+    // file management section
 #ifndef EMSCRIPTEN
     ImGui::SetNextTreeNodeOpen(true);
     if (ImGui::CollapsingHeader("File")) {
@@ -983,28 +978,40 @@ void ImGuiPanel()
         load_gcode();
         g_GCode_string = loadFileIntoString(g_GCode_path.c_str());
         g_FilamentDiameter = 1.75f;
+        g_NozzleDiameter = 0.4f;
         session_start();
         motion_start(g_FilamentDiameter);
         printer_reset();
         g_ForceRedraw = true;
       }
     }
+#else
+    /*
+    // TODO move to a download_file() function
+    if (g_Downloading) { // g_Downloading never used ?
+      ImGui::SetNextWindowSize(ImVec2(300, 50));
+      ImGui::SetNextWindowPosCenter();
+      ImGui::Begin("Downloading ...");
+      ImGui::ProgressBar(g_DownloadProgress);
+      ImGui::End();
+    }
+    */
 #endif
 
-    // printer setup
+    // printer setup section
     ImGui::SetNextTreeNodeOpen(true);
-    static float nozzleDiameter = g_NozzleDiameter;
     if (ImGui::CollapsingHeader("Printer")) {
       // filament diameter
       ImGui::InputFloat("Filament diameter", &g_FilamentDiameter, 0.0f, 0.0f, 3);
       g_FilamentDiameter = std::clamp(g_FilamentDiameter, 0.1f, 10.0f);
       // nozzle diameter
-      ImGui::InputFloat("Nozzle diameter", &nozzleDiameter, 0.0f, 0.0f, 3);
-      g_NozzleDiameter = std::clamp(nozzleDiameter, c_HeightFieldStep * 2.0f, 10.0f);
-      // extruder number
-      ImGui::InputInt("Number of extruders", &g_NumExtruders, 1, 1, ImGuiInputTextFlags_ReadOnly);
-      // extruders offsets
+      ImGui::InputFloat("Nozzle diameter", &g_NozzleDiameter, 0.0f, 0.0f, 3);
+      g_NozzleDiameter = std::clamp(g_NozzleDiameter, c_HeightFieldStep * 2.0f, 10.0f);
+      // extruders
+      ImGui::InputInt("Number of extruders", &g_NumExtruders, 1, 1);
       if (g_NumExtruders > 1) {
+        ImGui::Text("Extruders detected: %d", g_NumExtruders);
+        // extruders offsets (extruder 0 is ommited, as it should be the reference)
         for (int i = 1; i != g_NumExtruders; i++) {
           if (ImGui::TreeNode(("Offsets for Extruder " + std::to_string(i)).c_str())) {
             ImGui::InputFloat("X Offset", &g_Extruders_offset[i].first, 0.1f, 0.5f, "%.3f");
@@ -1029,7 +1036,6 @@ void ImGuiPanel()
       ImGui::SliderFloat("Step (mm)", &g_UserMmStep, 0.001f, 1000.0f, "%.3f", 3.0f);
       // control buttons
       if (ImGui::Button("Reset")) {
-        g_NozzleDiameter = nozzleDiameter;
         printer_reset();
         g_ForceRedraw = true;
       }
