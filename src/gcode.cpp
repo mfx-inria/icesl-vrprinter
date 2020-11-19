@@ -206,15 +206,14 @@ bool gcode_advance()
           g_VolumetricMode = false;
           g_FilDiameter = 2.85;
         }
-      } else {
-        g_Parser->reachChar('\n');
       }
+      g_Parser->reachChar('\n');
     } else if (c == '\r') {
       g_Parser->reachChar('\n');
     } else if (c == '\0' || c == -1) {
       return false;
     } else {
-      std::cerr << "Error parsing GCode line " << g_Line << std::endl;
+      std::cerr << Console::red <<  "Error parsing GCode line " << g_Line << Console::gray << std::endl;
       g_GCodeError = true;
       return false;
     }

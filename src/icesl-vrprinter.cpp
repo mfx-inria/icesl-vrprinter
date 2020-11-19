@@ -1026,6 +1026,7 @@ void ImGuiPanel()
       // volumetric extrusion
       ImGui::Checkbox("Bed center is (0,0)", &g_isCentered);
     }
+
     // control
     ImGui::SetNextTreeNodeOpen(true);
     if (ImGui::CollapsingHeader("Control")) {
@@ -1070,6 +1071,7 @@ void ImGuiPanel()
       // show overlaps
       ImGui::Checkbox("Color overlaps (blue) and overhangs (red)", &g_ColorOverhangs);
     }
+
     // status
     ImGui::SetNextTreeNodeOpen(true);
     if (ImGui::CollapsingHeader("Status")) {
