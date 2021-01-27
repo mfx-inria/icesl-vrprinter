@@ -27,11 +27,11 @@ LIBSL_WIN32_FIX;
 using namespace std;
 // ----------------------------------------------------------------
 
-int           g_UIWidth = 350;
+int           g_UIWidth = 300;
 
-int           g_ScreenWidth = 700;
+int           g_ScreenWidth = 600;
 int           g_ScreenHeight = 700;
-int           g_RenderWidth = 700;
+int           g_RenderWidth = 600;
 int           g_RenderHeight = 700;
 
 int           g_RTWidth = 1024;

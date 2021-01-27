@@ -952,6 +952,20 @@ void makeAxisMesh()
 
 // ----------------------------------------------------------------
 
+static void HelpMarker(const char* desc)
+{
+  ImGui::TextDisabled("(?)");
+  if (ImGui::IsItemHovered()) {
+    ImGui::BeginTooltip();
+    ImGui::PushTextWrapPos(ImGui::GetFontSize() * 35.0f);
+    ImGui::TextUnformatted(desc);
+    ImGui::PopTextWrapPos();
+    ImGui::EndTooltip();
+  }
+}
+
+// ----------------------------------------------------------------
+
 void ImGuiPanel()
 {
   if (!g_FatalError) {
@@ -968,7 +982,7 @@ void ImGuiPanel()
 
     // creating imgui panel
     ImGui::Begin("Virtual 3D printer", NULL, panel_flags);
-    ImGui::PushItemWidth(200);
+    ImGui::PushItemWidth(ImGui::GetContentRegionAvail().x * 0.5f);
 
     // file management section
 #ifndef EMSCRIPTEN
@@ -1063,13 +1077,16 @@ void ImGuiPanel()
       ImGui::SameLine();
       ImGui::Checkbox("Auto pause", &g_AutoPause);
       if (g_AutoPause) {
-        ImGui::InputFloat("overhang >", &g_AutoPauseDanglingLen, 1.0f, 1000.0f);
-        ImGui::InputFloat("overlap  >", &g_AutoPauseOverlapLen, 1.0f, 1000.0f);
+        ImGui::InputFloat("Overhang >", &g_AutoPauseDanglingLen, 1.0f, 1000.0f);
+        ImGui::SameLine(); HelpMarker("Will auto-pause when the detected overhang value is higher than the threshold");
+        ImGui::InputFloat("Overlap >", &g_AutoPauseOverlapLen, 1.0f, 1000.0f);
+        ImGui::SameLine(); HelpMarker("Will auto-pause when the detected overlap value is higher than the threshold");
       }
       // show trajectory (virtual nozzle)
       ImGui::Checkbox("Show trajectory", &g_ShowTrajectory);
       // show overlaps
-      ImGui::Checkbox("Color overlaps (blue) and overhangs (red)", &g_ColorOverhangs);
+      ImGui::Checkbox("Show overlaps and overhangs", &g_ColorOverhangs);
+      ImGui::SameLine(); HelpMarker("Overlaps -> blue \nOverhangs -> red");
     }
 
     // status
