@@ -96,6 +96,8 @@ std::string   g_GCode_path;
 //std::string   g_GCode_fname;
 std::string   g_GCode_string;
 
+time_t        g_FileStamp;
+
 #include "simple.h"
 AutoBindShader::simple     g_ShaderSimple;
 #include "final.h"
@@ -160,7 +162,7 @@ int                g_SpeedsCount = 0;
 float              g_SpeedsSample = 0.0f;
 
 const float ZNear = 0.1f;
-const float ZFar = 500.0f;
+const float ZFar = 1000.0f;
 
 // ----------------------------------------------------------------
 

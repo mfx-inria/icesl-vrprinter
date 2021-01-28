@@ -14,6 +14,12 @@ NOTE: we assume there is no curved printing, eg z grows monotically
 #include "gcode.h"
 #include "motion.h"
 
+#ifndef WIN32
+#include <unistd.h>
+#include <fcntl.h>
+#include <sys/stat.h>
+#endif
+
 // ----------------------------------------------------------------
 
 GPUBead g_Bead;
@@ -713,6 +719,21 @@ bool step_simulation(bool gpu_draw)
 
 // ----------------------------------------------------------------
 
+bool fileChanged(std::string file, time_t& _last)
+{
+  struct stat st;
+  int fh = open(file.c_str(), O_RDONLY);
+  if (fh < 0) return false;
+  fstat(fh, &st);
+  close(fh);
+  if (st.st_mtime != _last) {
+    _last = st.st_mtime;
+    cerr << "[vrprinter] detected change in " << file << endl;
+    return true;
+  }
+  return false;
+}
+
 void mainRender()
 {
   static t_time tm_lastChange = milliseconds();
@@ -722,11 +743,10 @@ void mainRender()
   tm_lastFrame   = tm_now;
 
 #ifdef EMSCRIPTEN
-  if (LibSL::System::File::exists("/print.gcode")) {
-    g_GCode_string = loadFileIntoString("/print.gcode");
+  if (fileChanged("/icesl.gcode", g_FileStamp)) {
+    g_GCode_string = loadFileIntoString("/icesl.gcode");
     session_start();
     motion_start(g_FilamentDiameter);
-    std::remove("/print.gcode");
     g_ForceRedraw = true;
   }
 #endif
