@@ -7,6 +7,8 @@ NOTE: we assume there is no curved printing, eg z grows monotically
 #include <iostream>
 #include <fstream>
 
+#include <LibSL/UIHelpers/StyleManager.h>
+
 #include "icesl-vrprinter.h"
 
 #include "bed.h"
@@ -18,6 +20,8 @@ NOTE: we assume there is no curved printing, eg z grows monotically
 #include <unistd.h>
 #include <fcntl.h>
 #include <sys/stat.h>
+#else
+
 #endif
 
 // ----------------------------------------------------------------
@@ -176,25 +180,44 @@ int main(int argc, const char* argv[])
 
   SimpleUI::initImGui();
 
+  // theme
+#ifdef EMSCRIPTEN
+  std::string theme_file = "./default.icss";
+#else
+  TCHAR buffer[MAX_PATH] = { 0 };
+  GetModuleFileName(NULL, buffer, MAX_PATH);
+  std::string theme_file = LibSL::StlHelpers::extractPath(std::string(buffer)) + "/default.icss";
+#endif
+
+  StyleManager* style = StyleManager::get();
+  if (LibSL::System::File::exists(theme_file.c_str())) {
+    style->load(theme_file.c_str());
+    style->push("main");
+  } else {
+    std::cerr << Console::red << "theme not found" << Console::gray << std::endl;
+  }
+
 #ifdef EMSCRIPTEN
   /// load gcode in editor window
   std::string command = "setupEditor();";
   emscripten_run_script(command.c_str());
 #endif
 
-motion_start(g_FilamentDiameter);
+  motion_start(g_FilamentDiameter);
 
-printer_reset();
+  printer_reset();
 
-glDepthFunc(GL_LEQUAL);
+  glDepthFunc(GL_LEQUAL);
 
-/// main loop
-TrackballUI::loop();
+  /// main loop
+  TrackballUI::loop();
 
-SimpleUI::terminateImGui();
-TrackballUI::shutdown();
+  style->pop();
 
-return 0;
+  SimpleUI::terminateImGui();
+  TrackballUI::shutdown();
+
+  return 0;
 }
 
 // ----------------------------------------------------------------
@@ -719,6 +742,8 @@ bool step_simulation(bool gpu_draw)
 
 // ----------------------------------------------------------------
 
+#ifdef EMSCRIPTEN
+
 bool fileChanged(std::string file, time_t& _last)
 {
   struct stat st;
@@ -733,6 +758,8 @@ bool fileChanged(std::string file, time_t& _last)
   }
   return false;
 }
+
+#endif
 
 void mainRender()
 {

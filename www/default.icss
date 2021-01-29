@@ -1,0 +1,170 @@
+/* forge editor background*/
+editor {
+  Background 			: #313131; 
+  TextSelectedBg		: #696969; 
+  Caret					: #FFFFFF;
+  Identifier 			: #FFFFFF;
+  Comment    			: #98FB98;
+  CommentLine			: #98FB98;
+  Number     			: #DDA0DD;
+}
+
+/* color for 3D viewer*/
+3dView{
+  Background 			: #464648;
+  BedBorder  			: #1C1C1C;
+  Grid       			: #A9B0BA;
+}
+
+3dViewError {
+  Background 			: #FF7675;
+}
+
+brushes {
+  0 					: #939598;
+  1 					: #005D5D;
+  2 					: #B17E70;
+}
+
+main {
+  Text 					: #FFFFFF;
+  TextSelectedBg 		: #BBBBBB;
+
+/* Color for parameter window */
+  
+  WindowBg 				: #212121;
+  PopupBg  				: #494949; 
+
+/*tweaks title color bar*/
+ 
+  TitleBg          		: #45C2C3;    
+  TitleBgActive    		: #45C2C3;
+  TitleBgCollapsed 		: #45C2C3;
+  
+/* Color Header for parameters */
+
+/* Color bar for title*/
+
+  Header        		: #399FA0;
+  HeaderHovered 		: #66CDCD;
+  HeaderActive  		: #399FA0;
+  
+  Button        		: #399FA0;
+  ButtonHovered 		: #66CDCD;
+  ButtonActive  		: #399FA0;
+
+  FrameBg        		: #494949; /* parameter input background*/
+  FrameBgHovered 		: #7A7A7A;
+  FrameBgActive			: #399FA0;
+  
+  CheckMark 			: #45C2C3;
+  
+  ScrollbarBg			: #6A6A6A;
+  ScrollbarGrab			: #45C2C3;
+  ScrollbarGrabHovered	: #95DCDC;
+  ScrollbarGrabActive	: #399FA0;
+  
+  SliderGrab			: #B0E9E9;
+  SliderGrabHovered		: #66CDCD;
+  SliderGrabActive		: #7BCCCC;
+  
+  PlotHistogram			: #B0E9E9;
+}
+
+tooltip {
+  WindowBg 				: #CCCCCCEE;
+  PopupBg				: #CCCCCCEE;
+  Text					: #2A2A2C;
+}
+
+buttonErase {
+  Button        		: #399FA0;
+  ButtonHovered 		: #66CDCD;
+  ButtonActive  		: #399FA0;
+}
+
+buttonEdit {
+  Button        		: #399FA0;
+  ButtonHovered 		: #66CDCD;
+  ButtonActive  		: #399FA0;
+}
+
+/* slicing button*/
+
+buttonSubmit {
+  Button        		: #399FA0;
+  ButtonHovered 		: #66CDCD;
+  ButtonActive  		: #399FA0;
+}
+
+buttonDisabled {
+  Button				: #CCCCCC;
+  ButtonHovered			: #CCCCCC;
+  ButtonActive			: #CCCCCC;
+}
+
+fieldEditing {
+  WindowBg 				: #212121;
+  PopupBg  				: #494949;
+}
+
+perLayerEditing {
+  WindowBg 				: #212121;
+  PopupBg  				: #494949;
+  PlotLines				: #000000;
+}
+
+settingKey {
+  WindowBg 				: #212121;
+  PopupBg  				: #494949;
+}
+
+menuBar {
+  Text					: #FFFFFF;
+  TextDisabled			: #CCCCCC;
+  PopupBg				: #212121;
+  MenuBarBg				: #399FA0;
+  
+  Header        		: #66CDCD;
+  HeaderHovered 		: #66CDCD;
+  HeaderActive  		: #66CDCD;
+  
+  Border				: #399FA0;
+  
+  FrameBg 				: #494949;
+  FrameBgHovered 		: #7A7A7A;
+  FrameBgActive			: #399FA0;
+  
+  CheckMark 			: #45C2C3;
+}
+
+settingIcons {
+  Button        		: #399FA0;
+  ButtonHovered 		: #66CDCD;
+  ButtonActive  		: #DDDDDD;
+  WindowBg 				: #212121;
+}
+
+settingSetByScript {
+  Text					: #FFFFFF;
+}
+
+///////////////////////////////////////
+
+rightPanel {
+}
+
+tweaks {
+}
+
+button {
+}
+
+radioButton {
+}
+
+checkButton {
+}
+
+runningService {
+}
