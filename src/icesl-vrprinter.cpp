@@ -111,6 +111,7 @@ int main(int argc, const char* argv[])
   TrackballUI::onRender = mainRender;
   TrackballUI::onKeyPressed = mainKeyboard;
   TrackballUI::onMouseButtonPressed = mainMouseButton;
+  TrackballUI::onMouseWheel = mainMouseWheel;
 
   TrackballUI::init(g_UIWidth + g_ScreenWidth, g_ScreenHeight);
 
@@ -1239,6 +1240,16 @@ void mainMouseButton(uint x, uint y, uint btn, uint flags)
     g_ZoomTarget = g_ZoomTarget / 1.05f;
     std::cout << Console::green << "zoom in" << Console::gray << std::endl;
   }
+}
+
+// ----------------------------------------------------------------
+
+void mainMouseWheel(int incr)
+{
+  incr = -25 * sign(incr);
+  v3f up = TrackballUI::trackball().up();
+  v3f tz = v3f(up[0] * incr, up[1] * incr, up[2] * incr);
+  TrackballUI::trackball().translation() = TrackballUI::trackball().translation() + tz ;
 }
 
 // ----------------------------------------------------------------

@@ -236,6 +236,7 @@ bool step_simulation(bool gpu_draw);
 void ImGuiPanel();
 void mainKeyboard(unsigned char key);
 void mainMouseButton(uint x, uint y, uint btn, uint flags);
+void mainMouseWheel(int incr);
 
 // ----------------------------------------------------------------
 // utilities
