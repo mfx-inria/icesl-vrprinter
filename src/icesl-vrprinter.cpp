@@ -21,7 +21,7 @@ NOTE: we assume there is no curved printing, eg z grows monotically
 #include <fcntl.h>
 #include <sys/stat.h>
 #else
-
+#include <algorithm>
 #endif
 
 // ----------------------------------------------------------------
@@ -185,8 +185,15 @@ int main(int argc, const char* argv[])
 #ifdef EMSCRIPTEN
   std::string theme_file = "./default.icss";
 #else
+#if WIN32
   TCHAR buffer[MAX_PATH] = { 0 };
   GetModuleFileName(NULL, buffer, MAX_PATH);
+#else
+  char buffer[256];
+  size_t len = sizeof(buffer);
+  int bytes = std::min(static_cast<size_t>(readlink("/proc/self/exe", buffer, len)), len - 1);
+  if(bytes >= 0) { buffer[bytes] = '\0'; }
+#endif
   std::string theme_file = LibSL::StlHelpers::extractPath(std::string(buffer)) + "/default.icss";
 #endif
 
