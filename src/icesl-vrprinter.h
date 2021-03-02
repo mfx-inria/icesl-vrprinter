@@ -249,6 +249,9 @@ void export_histogram(std::string fname, Histogram &h);
 string getFileName(const string& s);
 
 #ifdef EMSCRIPTEN
+void onLoadedData(const char* arg) { }
+void onErrorData(const char* arg) { }
+
 void beginDownload()
 {
   g_Downloading = true;

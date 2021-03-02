@@ -209,6 +209,9 @@ int main(int argc, const char* argv[])
   /// load gcode in editor window
   std::string command = "setupEditor();";
   emscripten_run_script(command.c_str());
+
+  // report
+  emscripten_async_wget("https://icesl.loria.fr/webprinter/report.php", "/reportresult", onLoadedData, onErrorData);
 #endif
 
   motion_start(g_FilamentDiameter);
