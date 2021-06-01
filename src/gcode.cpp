@@ -189,27 +189,29 @@ bool gcode_advance()
       int e = g_Parser->readInt();
       set_extruder(e);
       g_Parser->reachChar('\n');
-    } else if (c == '\n') {
-      // do nothing
-    } else if (c == '<') {
-      g_Parser->reachChar('\n');
-    } else if (c == ';') {
+    } else if (c == ';') { // comments
       if (g_Line == 1) {
         std::string s = g_Parser->readString();
         if (s == "FLAVOR:UltiGCode") { // detecting UltiGcode to enable volumetric extrusion
           g_VolumetricMode = true;
           g_FilDiameter = 2.85;
+          //std::cerr << Console::blue << "UM2 detected" << Console::gray << std::endl;
         }
-      } else if (g_Line == 4) {
+      } else if (g_Line == 3) {
         std::string s = g_Parser->readString();
         if (s == "FLAVOR:Griffin") { // detecting UltiGcode (Ultimaker 3 or newer) to enable volumetric extrusion
           g_VolumetricMode = false;
           g_FilDiameter = 2.85;
+          //std::cerr << Console::blue << "UM3 detected" << Console::gray << std::endl;
         }
       }
       g_Parser->reachChar('\n');
+    } else if (c == '<') {
+      g_Parser->reachChar('\n');
     } else if (c == '\r') {
       g_Parser->reachChar('\n');
+    } else if (c == '\n') {
+      // do nothing
     } else if (c == '\0' || c == -1) {
       return false;
     } else {

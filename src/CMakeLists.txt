@@ -59,7 +59,7 @@ add_executable(icesl-vrprinter
 AUTO_BIND_SHADERS( simple final deposition )
 
 target_link_libraries(icesl-vrprinter
-  LibSL 
+  LibSL
   LibSL_gl
   tinyfiledialogs
 )

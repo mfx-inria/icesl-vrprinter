@@ -17,11 +17,11 @@ NOTE: we assume there is no curved printing, eg z grows monotically
 #include "motion.h"
 
 #ifndef WIN32
-#include <unistd.h>
-#include <fcntl.h>
-#include <sys/stat.h>
+  #include <unistd.h>
+  #include <fcntl.h>
+  #include <sys/stat.h>
 #else
-#include <algorithm>
+  #include <algorithm>
 #endif
 
 // ----------------------------------------------------------------
