@@ -60,6 +60,10 @@ double        g_GlobalDepositionLength = 0.0;
 bool          g_ShowTrajectory = true;
 bool          g_ColorOverhangs = false;
 
+bool          g_AutoDepositionHW = true;
+float         g_DepositionHeight = g_NozzleDiameter / 2.0f;
+float         g_DepositionWidth = g_NozzleDiameter / 2.0f;
+
 bool          g_AutoPause = false;
 float         g_AutoPauseDanglingLen = 5.0f;
 float         g_AutoPauseOverlapLen = 5.0f;

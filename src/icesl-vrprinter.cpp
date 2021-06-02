@@ -593,8 +593,6 @@ bool step_simulation(bool gpu_draw)
     TrajPoint tj   = TrajPoint(pos, (float)th, (float)0.0f, dangling, overlap);
 
     if (len > 1e-6 && !motion_is_travel()) {
-      // std::cerr << 'x';
-
       // print move
       double cs = M_PI * g_FilamentDiameter * g_FilamentDiameter / 4.0f; // mm^2
       double sa = motion_get_current_e_per_xyz() * cs;   // vf / len;
@@ -603,19 +601,19 @@ bool step_simulation(bool gpu_draw)
       double rs = disk_squashed_radius(r, squash_t);
       double max_th = sa / g_NozzleDiameter;
 
+      if (!g_AutoDepositionHW) { // fixed th and radius
+        th       = g_DepositionHeight;
+        squash_t = th;
+        rs       = g_DepositionWidth;
+      }
+
+#if 0
+      if (rs > 0.3f) {
+        std::cerr << sprint("z %.6f th %.6f th_prev %.6f rs %.6f \n", (float)pos[2], (float)th, (float)th_prev, (float)rs);
+        sl_assert(false);
+      }
+#endif
       tj = TrajPoint(pos, (float)th, (float)r, dangling, overlap);
-
-      //if (rs > 0.3f) {
-      //  std::cerr << sprint("z %.6f th %.6f th_prev %.6f rs %.6f \n", (float)pos[2], (float)th, (float)th_prev, (float)rs);
-        //sl_assert(false);
-      //}
-
-      /// /////////////////////////////////////////
-      // fixed th and radius
-      //th       = 0.2f;
-      //squash_t = th;
-      //rs       = g_NozzleDiameter / 2.0f;
-      /// /////////////////////////////////////////
 
       // stats
       if (pos[2] > g_StatsHeightThres) {
@@ -1145,6 +1143,13 @@ void ImGuiPanel()
       // show overlaps
       ImGui::Checkbox("Show overlaps and overhangs", &g_ColorOverhangs);
       ImGui::SameLine(); HelpMarker("Overlaps -> blue \nOverhangs -> red");
+
+      ImGui::Checkbox("Automatic deposition height & width", &g_AutoDepositionHW);
+      ImGui::SameLine(); HelpMarker("The deposition height & width will be automatically processed depending on coordinates, flow, filament diameter and nozzle diameter");
+      if (!g_AutoDepositionHW) {
+        ImGui::InputFloat("Deposition Height", &g_DepositionHeight, 0.0f, 0.0f, 3);
+        ImGui::InputFloat("Deposition Width", &g_DepositionWidth, 0.0f, 0.0f, 3);
+      }
     }
 
     // status
