@@ -916,7 +916,10 @@ void mainRender()
         img.pixel(i, j) = uchar(frac(g_HeightField.at(i, j)[0]) * 255.0f);
       }
       static int cnt = 0;
-      saveImage(sprint("E:\\SCRATCH\\dump\\hfield_%04d.png",cnt++), &img);
+      // Warning! the folder must be prepared !
+      // Note: shouldn't it be tied to line number / layer height?
+      saveImage(sprint("%s_dump\\hfield_%04d.png", g_GCode_path.c_str(), cnt++), &img);
+      std::cerr << "Height Fields dumped at : " << g_GCode_path << "_dump\\" << std::endl;
       if (g_GlobalDepositionLength - g_DumpHeightFieldStartLen > 10.0f) {
         g_DumpHeightField = false;
       }
@@ -1114,11 +1117,13 @@ void ImGuiPanel()
       if (ImGui::Button("Clear below")) {
         g_ForceClear = true;
       }
+#ifndef EMSCRIPTEN
       ImGui::SameLine();
       if (ImGui::Button("Dump")) {
         g_DumpHeightField = true;
         g_DumpHeightFieldStartLen = g_GlobalDepositionLength;
       }
+#endif
       // pause button
       if (g_Paused) {
         if (ImGui::Button("Resume")) {
