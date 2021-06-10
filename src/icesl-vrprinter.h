@@ -27,16 +27,20 @@ LIBSL_WIN32_FIX;
 using namespace std;
 // ----------------------------------------------------------------
 
-int           g_UIWidth = 300;
-
-int           g_ScreenWidth = 600;
+// UI elements
+int           g_ScreenWidth = 900;
 int           g_ScreenHeight = 700;
-int           g_RenderWidth = 600;
-int           g_RenderHeight = 700;
 
-int           g_RTWidth = 1024;
-int           g_RTHeight = 1024;
+const int     g_UIWidth = 300; // imgui panel width
 
+int           g_RenderWidth = g_ScreenWidth - g_UIWidth;
+int           g_RenderHeight = g_ScreenHeight;
+
+// note: should be based on screen size ?
+int           g_RTWidth = 2048;
+int           g_RTHeight = 2048;
+
+// virtual printer settings
 v2f           g_BedSize(200.0f, 200.0f);
 float         g_FilamentDiameter = 1.75f;
 float         g_NozzleDiameter = 0.4f;
@@ -219,6 +223,7 @@ void addBar(AutoPtr<T_Mesh> gpumesh, v3f a, v3f b, pair<v3f, v3f> uv, float sz =
 // ----------------------------------------------------------------
 // rendering
 
+void mainWindowReshape(uint w, uint h);
 void mainRender();
 void makeAxisMesh();
 m4x4f alignAlongSegment(const v3f& p0, const v3f& p1);

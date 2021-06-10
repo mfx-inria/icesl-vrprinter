@@ -107,20 +107,20 @@ int main(int argc, const char* argv[])
   }
 #endif
 
-  /// init simple UI
+  /// init TrackballUI UI
   TrackballUI::onRender = mainRender;
   TrackballUI::onKeyPressed = mainKeyboard;
   TrackballUI::onMouseButtonPressed = mainMouseButton;
   TrackballUI::onMouseWheel = mainMouseWheel;
+  TrackballUI::onReshape = mainWindowReshape;
 
-  TrackballUI::init(g_UIWidth + g_ScreenWidth, g_ScreenHeight);
+  TrackballUI::init(g_ScreenWidth, g_ScreenHeight);
 
   // GL init
   glEnable(GL_DEPTH_TEST);
 
-  // imgui
+  // imgui binding with SimpleUI
   SimpleUI::bindImGui();
-  SimpleUI::onReshape(g_ScreenWidth + g_UIWidth, g_ScreenHeight);
 
   // quad for shader invocation
   g_GPUMesh_quad = AutoPtr<SimpleMesh>(new SimpleMesh());
@@ -156,7 +156,7 @@ int main(int argc, const char* argv[])
 
   g_RT = RenderTarget2DRGBA_Ptr(new RenderTarget2DRGBA(g_RTWidth, g_RTHeight, GPUTEX_AUTOGEN_MIPMAP));
   g_RT->bind();
-  glViewport(0, 0, g_RenderWidth, g_RenderHeight);
+  glViewport(g_UIWidth, 0, g_RenderWidth, g_RenderHeight);
   LibSL::GPUHelpers::clearScreen(LIBSL_COLOR_BUFFER | LIBSL_DEPTH_BUFFER, 0.0f, 0.0f, 0.0f);
   g_RT->unbind();
 
@@ -180,6 +180,7 @@ int main(int argc, const char* argv[])
 #endif
 
   SimpleUI::initImGui();
+  SimpleUI::onReshape(g_ScreenWidth, g_ScreenHeight);
 
   // theme
 #ifdef EMSCRIPTEN
@@ -770,6 +771,23 @@ bool fileChanged(std::string file, time_t& _last)
 
 #endif
 
+void mainWindowReshape(uint w, uint h) {
+  g_ScreenWidth = w;
+  g_ScreenHeight = h;
+  g_RenderWidth = w - g_UIWidth;
+  g_RenderHeight = h;
+
+  printer_reset();
+  g_ForceRedraw = true;
+  
+  /*
+  std::cerr << Console::green << w << " x " << h << " size on listener" << Console::gray << std::endl;
+  std::cerr << Console::blue << g_ScreenWidth << " x " << g_ScreenHeight << " screen size" << Console::gray << std::endl;
+  std::cerr << Console::red << g_RenderWidth << " x " << g_RenderHeight << " render size" << Console::gray << std::endl;
+  std::cerr << Console::magenta << g_UIWidth << " ui width" << Console::gray << std::endl;
+  */
+}
+
 void mainRender()
 {
   static t_time tm_lastChange = milliseconds();
@@ -866,14 +884,14 @@ void mainRender()
     }
 
     // clear screen
-    glViewport(g_UIWidth, 0, g_ScreenWidth, g_ScreenHeight);
+    glViewport(g_UIWidth, 0, g_RenderWidth, g_RenderHeight);
     LibSL::GPUHelpers::clearScreen(LIBSL_COLOR_BUFFER | LIBSL_DEPTH_BUFFER, 0.1f, 0.1f, 0.1f);
 
     // final pass
     g_ShaderFinal.begin();
     g_ShaderFinal.u_projview.set(orthoMatrixGL(0.0f, 1.0f, 0.0f, 1.0f, -1.0f, 1.0f));
     g_ShaderFinal.u_texpts.set(0);
-    g_ShaderFinal.u_pixsz.set(v3f(1.0f / g_RTWidth, 1.0f / g_RTWidth, 0.0f)); // squared and power of 2 tex to increase compatibility
+    g_ShaderFinal.u_pixsz.set(v3f(1.0f / (float)g_RTWidth, 1.0f / (float)g_RTWidth, 0.0f)); // squared and power of 2 tex to increase compatibility
     g_ShaderFinal.u_texscl.set(v2f(g_RenderWidth / (float)g_RTWidth, g_RenderHeight / (float)g_RTHeight)); // to adapt screen texture to the tex coord. one above
     g_ShaderFinal.u_ZNear.set(0.01f);
     g_ShaderFinal.u_ZFar.set(1000.0f);
@@ -927,7 +945,7 @@ void mainRender()
 
 #if 0
     //////////////////////////////////////////////////////////////
-    glViewport(g_UIWidth, 0, g_ScreenWidth/4, g_ScreenHeight/4);
+    glViewport(g_UIWidth, 0, g_RenderWidth /4, g_RenderHeight /4);
     glActiveTexture(GL_TEXTURE1);
     glBindTexture(GL_TEXTURE_2D, g_RT->texture());
     AutoPtr<Tex2DLum32F> texh(new Tex2DLum32F(g_HeightField));
@@ -948,7 +966,7 @@ void mainRender()
     LIBSL_GL_CHECK_ERROR;
     g_ShaderSimple.end();
     LIBSL_GL_CHECK_ERROR;
-    glViewport(g_UIWidth, 0, g_ScreenWidth, g_ScreenHeight);
+    glViewport(g_UIWidth, 0, g_RenderWidth, g_RenderHeight);
     //////////////////////////////////////////////////////////////
 #endif
 
@@ -961,7 +979,8 @@ void mainRender()
         bx.center()[0] - ex * 0.8f, bx.center()[0] + ex * 0.8f,
         bx.center()[1] - ex * 0.8f, bx.center()[1] + ex * 0.8f,
         bx.center()[2] - ex * 4.0f, bx.maxCorner()[2] + ex * 4.0f);
-      glViewport(g_UIWidth, 0, g_ScreenWidth / 4, g_ScreenHeight / 4);
+      int axis_size = g_ScreenWidth / 8;
+      glViewport(g_UIWidth, 0, axis_size, axis_size);
       g_ShaderSimple.begin();
       g_ShaderSimple.u_projection.set(proj);
       g_ShaderSimple.u_view.set(translationMatrix(-view.mulPoint(v3f(0))) * view * scaleMatrix(v3f(4.0f)));
@@ -970,17 +989,17 @@ void mainRender()
       glDisable(GL_CULL_FACE);
       g_GPUMesh_axis->render();
       g_ShaderSimple.end();
-      glViewport(g_UIWidth, 0, g_ScreenWidth, g_ScreenHeight);
+      glViewport(g_UIWidth, 0, g_RenderWidth, g_RenderHeight);
     }
 
   } else if (g_FatalError) { // fatal error
 
-    glViewport(g_UIWidth, 0, g_ScreenWidth, g_ScreenHeight);
+    glViewport(g_UIWidth, 0, g_RenderWidth, g_RenderHeight);
     LibSL::GPUHelpers::clearScreen(LIBSL_COLOR_BUFFER | LIBSL_DEPTH_BUFFER, 0.7f, 0.5f, 0.5f);
 
   } else {
 
-    glViewport(g_UIWidth, 0, g_ScreenWidth, g_ScreenHeight);
+    glViewport(g_UIWidth, 0, g_RenderWidth, g_RenderHeight);
     LibSL::GPUHelpers::clearScreen(LIBSL_COLOR_BUFFER | LIBSL_DEPTH_BUFFER, 0.1f, 0.1f, 0.1f);
 
   }
@@ -993,7 +1012,7 @@ void mainRender()
   }
 
   // interface
-  glViewport(0, 0, g_UIWidth + g_ScreenWidth, g_ScreenHeight);
+  glViewport(0, 0, g_UIWidth, g_ScreenHeight);
   ImGuiPanel();
 }
 
@@ -1037,7 +1056,7 @@ void ImGuiPanel()
 
     // imgui panel size & pos
     ImGui::SetNextWindowPos(ImVec2(0, 0), ImGuiSetCond_Once);
-    ImGui::SetNextWindowSize(ImVec2((float)g_UIWidth, 750), ImGuiSetCond_Once);
+    ImGui::SetNextWindowSize(ImVec2((float)g_UIWidth, g_ScreenHeight), ImGuiSetCond_Once);
 
     // creating imgui panel
     ImGui::Begin("Virtual 3D printer", NULL, panel_flags);
