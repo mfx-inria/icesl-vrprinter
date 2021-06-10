@@ -27,55 +27,8 @@ LIBSL_WIN32_FIX;
 using namespace std;
 // ----------------------------------------------------------------
 
-// UI elements
-int           g_ScreenWidth = 900;
-int           g_ScreenHeight = 700;
 
-const int     g_UIWidth = 300; // imgui panel width
-
-int           g_RenderWidth = g_ScreenWidth - g_UIWidth;
-int           g_RenderHeight = g_ScreenHeight;
-
-// note: should be based on screen size ?
-int           g_RTWidth = 2048;
-int           g_RTHeight = 2048;
-
-// virtual printer settings
-v2f           g_BedSize(200.0f, 200.0f);
-float         g_FilamentDiameter = 1.75f;
-float         g_NozzleDiameter = 0.4f;
-bool          g_isCentered = false;
-int           g_NumExtruders = 1;
-vector<pair<float, float>> g_Extruders_offset;
-
-const float   c_HeightFieldStep = 0.04f; // mm
-
-const float   c_ThicknessEpsilon = 0.001f; // 1 um
-
-float         g_StatsHeightThres = 1.2f; // mm, ignored everything below regarding overlaps and dangling
-
-float         g_MmStep = g_NozzleDiameter * 0.5f;
-float         g_UserMmStep = 100.0f;
-int           g_StartAtLine = 0;
-int           g_LastLine = 0;
-
-double        g_GlobalDepositionLength = 0.0;
-
-bool          g_ShowTrajectory = true;
-bool          g_ColorOverhangs = false;
-
-bool          g_AutoDepositionHW = true;
-float         g_DepositionHeight = g_NozzleDiameter / 2.0f;
-float         g_DepositionWidth = g_NozzleDiameter / 2.0f;
-
-bool          g_AutoPause = false;
-float         g_AutoPauseDanglingLen = 5.0f;
-float         g_AutoPauseOverlapLen = 5.0f;
-
-bool          g_InDangling = false;
-double        g_InDanglingStart = 0.0;
-bool          g_InDanglingBridging = false;
-std::map<int, float> g_DanglingHisto;
+// ----------------------------------------------------------------
 
 class TrajPoint {
 public:
@@ -88,23 +41,110 @@ public:
     pos(_pos), th(_th), r(_r), ov(_ov), dg(_dg) {}
 };
 
-std::vector<TrajPoint> g_DanglingTrajectory;
+typedef struct
+{
+  double deplength;
+  double radius;
+  v3d   a;
+  v3d   b;
+} t_height_segment;
 
+// ----------------------------------------------------------------
+
+// file handling
+std::string   g_GCode_path;
+std::string   g_GCode_string;
+time_t        g_FileStamp;
+
+bool          g_Downloading = false;
+float         g_DownloadProgress = 0.0f;
+
+// UI sections
+int           g_ScreenWidth = 900;
+int           g_ScreenHeight = 700;
+
+const int     g_UIWidth = 300; // imgui panel width
+
+int           g_RenderWidth = g_ScreenWidth - g_UIWidth;
+int           g_RenderHeight = g_ScreenHeight;
+
+int           g_RTWidth = 2048; // note: should be based on screen size ?
+int           g_RTHeight = 2048;
+
+// virtual printer settings
+v2f                        g_BedSize(200.0f, 200.0f);
+float                      g_FilamentDiameter = 1.75f;
+float                      g_NozzleDiameter = 0.4f;
+bool                       g_isCentered = false;
+int                        g_NumExtruders = 1;
+vector<pair<float, float>> g_Extruders_offset;
+
+// deposition track
+const float   c_HeightFieldStep = 0.04f; // mm
+const float   c_ThicknessEpsilon = 0.001f; // 1 um
+
+float         g_MmStep = g_NozzleDiameter * 0.5f;
+float         g_UserMmStep = 100.0f;
+
+// controls
+int           g_StartAtLine = 0;
+int           g_LastLine = 0;
+
+bool          g_ShowTrajectory = true;
+bool          g_ColorOverhangs = false;
+
+bool          g_AutoDepositionHW = true;
+float         g_DepositionHeight = g_NozzleDiameter / 2.0f;
+float         g_DepositionWidth = g_NozzleDiameter / 2.0f;
+
+bool          g_Paused = false;
+bool          g_AutoPause = false;
+float         g_AutoPauseDanglingLen = 5.0f;
+float         g_AutoPauseOverlapLen = 5.0f;
+
+bool          g_InDangling = false;
+double        g_InDanglingStart = 0.0;
+bool          g_InDanglingBridging = false;
 
 bool          g_InOverlap = false;
 double        g_InOverlapStart = 0.0;
-std::map<int, float> g_OverlapHisto;
 
 bool          g_DumpHeightField = false;
 double        g_DumpHeightFieldStartLen = 0.0;
 
-bool          g_Paused = false;
+// simulation handling
+v3d           g_PrevPos(0.0);
+v3d           g_PrevPrevPos(0.0);
+bool          g_PrevWasTravelOrDangling = false;
 
-std::string   g_GCode_path;
-//std::string   g_GCode_fname;
-std::string   g_GCode_string;
+bool          g_ForceRedraw = true;
+bool          g_ForceClear = false;
+bool          g_FatalError = false;
+bool          g_FatalErrorAllowRestart = false;
+string        g_FatalErrorMessage = "unkonwn error";
 
-time_t        g_FileStamp;
+std::vector<v3d>            g_Trajectory;
+std::list<t_height_segment> g_HeightSegments;
+AAB<3>                      g_HeightFieldBox;
+Array2D<Tuple<float, 1> >   g_HeightField;
+
+// stats
+float         g_StatsHeightThres = 1.2f; // mm, ignored everything below regarding overlaps and dangling
+double        g_GlobalDepositionLength = 0.0;
+
+std::vector<TrajPoint> g_DanglingTrajectory;
+
+std::map<int, float> g_DanglingHisto;
+std::map<int, float> g_OverlapHisto;
+
+std::vector<float> g_Flows(64, 0.0f);
+int                g_FlowsCount = 0;
+float              g_FlowsSample = 0.0f;
+std::vector<float> g_Speeds(64, 0.0f);
+int                g_SpeedsCount = 0;
+float              g_SpeedsSample = 0.0f;
+
+// ----------------------------------------------------------------
 
 #include "simple.h"
 AutoBindShader::simple     g_ShaderSimple;
@@ -113,12 +153,10 @@ AutoBindShader::final      g_ShaderFinal;
 #include "deposition.h"
 AutoBindShader::deposition g_ShaderDeposition;
 
-AutoPtr<AutoBindShader::deposition> test;
-
 RenderTarget2DRGBA_Ptr g_RT;
 
-typedef GPUMESH_MVF1(mvf_vertex_3f)                mvf_mesh;
-typedef GPUMesh_VertexBuffer<mvf_mesh>             SimpleMesh;
+typedef GPUMESH_MVF1(mvf_vertex_3f)      mvf_mesh;
+typedef GPUMesh_VertexBuffer<mvf_mesh>   SimpleMesh;
 
 AutoPtr<SimpleMesh>                      g_GPUMesh_quad;
 AutoPtr<SimpleMesh>                      g_GPUMesh_axis;
@@ -131,43 +169,6 @@ bool   g_Rotating = false;
 bool   g_Dragging = false;
 float  g_Zoom = 1.0f;
 float  g_ZoomTarget = 1.0f;
-
-std::vector<v3d>                 g_Trajectory;
-
-typedef struct
-{
-  double deplength;
-  double radius;
-  v3d   a;
-  v3d   b;
-} t_height_segment;
-
-std::list<t_height_segment> g_HeightSegments;
-
-AAB<3>                   g_HeightFieldBox;
-
-Array2D<Tuple<float, 1> > g_HeightField;
-
-v3d    g_PrevPos(0.0);
-v3d    g_PrevPrevPos(0.0);
-bool   g_PrevWasTravelOrDangling = false;
-
-
-bool   g_ForceRedraw = true;
-bool   g_ForceClear = false;
-bool   g_FatalError = false;
-bool   g_FatalErrorAllowRestart = false;
-string g_FatalErrorMessage = "unkonwn error";
-
-bool   g_Downloading = false;
-float  g_DownloadProgress = 0.0f;
-
-std::vector<float> g_Flows(64, 0.0f);
-int                g_FlowsCount = 0;
-float              g_FlowsSample = 0.0f;
-std::vector<float> g_Speeds(64, 0.0f);
-int                g_SpeedsCount = 0;
-float              g_SpeedsSample = 0.0f;
 
 const float ZNear = 0.1f;
 const float ZFar = 1000.0f;
@@ -223,7 +224,6 @@ void addBar(AutoPtr<T_Mesh> gpumesh, v3f a, v3f b, pair<v3f, v3f> uv, float sz =
 // ----------------------------------------------------------------
 // rendering
 
-void mainWindowReshape(uint w, uint h);
 void mainRender();
 void makeAxisMesh();
 m4x4f alignAlongSegment(const v3f& p0, const v3f& p1);
@@ -243,6 +243,7 @@ bool step_simulation(bool gpu_draw);
 // UI
 
 void ImGuiPanel();
+void mainWindowReshape(uint w, uint h);
 void mainKeyboard(unsigned char key);
 void mainMouseButton(uint x, uint y, uint btn, uint flags);
 void mainMouseWheel(int incr);
