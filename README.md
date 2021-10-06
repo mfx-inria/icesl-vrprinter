@@ -22,7 +22,7 @@ To build IceSL-vrprinter, you will need the following components installed on yo
 - C++ standard libraries
 - Any IDE supporting C++ (on Windows, [Visual Studio][vs] is recommended)
 
-Once the required components installed, you can fetch the source code by cloning or downloading a .zip of the source files.
+Once the required components installed, you can fetch the source code by cloning or [downloading a .zip][zip] of the source files.
 ```Shell
 git clone https://github.com/mfx-inria/icesl-vrprinter.git
 ```
@@ -106,6 +106,7 @@ You can follow the [Google C++ Style Guide][codestyle] for new code.
 [icesl]: https://icesl.loria.fr/
 [vs]: https://visualstudio.microsoft.com
 [codestyle]: https://google.github.io/styleguide/cppguide.html
+[zip]: https://github.com/mfx-inria/icesl-vrprinter/archive/refs/heads/master.zip
 [pr]: https://github.com/mfx-inria/icesl-vrprinter/pulls
 [issues]: https://github.com/mfx-inria/icesl-vrprinter/issues
 
