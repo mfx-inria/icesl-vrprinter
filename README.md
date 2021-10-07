@@ -22,6 +22,11 @@ To build IceSL-vrprinter, you will need the following components installed on yo
 - C++ standard libraries
 - Any IDE supporting C++ (on Windows, [Visual Studio][vs] is recommended)
 
+To build IceSL-vrprinter on Linux, you will also need glfw3.
+```Shell
+sudo apt-get install libglfw3-dev
+```
+
 Once the required components installed, you can fetch the source code by cloning or [downloading a .zip][zip] of the source files.
 ```Shell
 git clone https://github.com/mfx-inria/icesl-vrprinter.git
